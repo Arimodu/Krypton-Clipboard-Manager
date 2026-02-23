@@ -20,6 +20,7 @@ public class TrayIconService : IDisposable
     private readonly Action _disconnectAction;
     private readonly Func<bool> _isConnectedFunc;
     private readonly Action _exitAction;
+    private readonly Action? _showMacOSPermissionsAction;
     private Action? _pendingNotificationAction;
 
     public TrayIconService(
@@ -29,7 +30,8 @@ public class TrayIconService : IDisposable
         Action showLoginAction,
         Action disconnectAction,
         Func<bool> isConnectedFunc,
-        Action exitAction)
+        Action exitAction,
+        Action? showMacOSPermissionsAction = null)
     {
         _showPopupAction = showPopupAction;
         _showSettingsAction = showSettingsAction;
@@ -38,6 +40,7 @@ public class TrayIconService : IDisposable
         _disconnectAction = disconnectAction;
         _isConnectedFunc = isConnectedFunc;
         _exitAction = exitAction;
+        _showMacOSPermissionsAction = showMacOSPermissionsAction;
     }
 
     public void Initialize()
@@ -58,6 +61,13 @@ public class TrayIconService : IDisposable
         menu.Add(_connectItem);
 
         menu.Add(new NativeMenuItemSeparator());
+
+        if (_showMacOSPermissionsAction != null)
+        {
+            var permissionsItem = new NativeMenuItem("macOS Permissions...");
+            permissionsItem.Click += (_, _) => _showMacOSPermissionsAction();
+            menu.Add(permissionsItem);
+        }
 
         var settingsItem = new NativeMenuItem("Settings");
         settingsItem.Click += (_, _) => _showSettingsAction();
