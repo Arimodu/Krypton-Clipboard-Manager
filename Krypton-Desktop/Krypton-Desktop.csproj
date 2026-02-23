@@ -1,0 +1,73 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Determine target platform: true when RID is win-* or no RID and building on Windows -->
+    <_IsWindowsTarget Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">true</_IsWindowsTarget>
+    <_IsWindowsTarget Condition="'$(RuntimeIdentifier)' == '' And '$(OS)' == 'Windows_NT'">true</_IsWindowsTarget>
+    <OutputType Condition="'$(_IsWindowsTarget)' == 'true'">WinExe</OutputType>
+    <OutputType Condition="'$(_IsWindowsTarget)' != 'true'">Exe</OutputType>
+    <ApplicationManifest Condition="'$(_IsWindowsTarget)' == 'true'">app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\" />
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.9" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.9" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.9" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.9">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
+    <PackageReference Include="Projektanker.Icons.Avalonia.MaterialDesign" Version="9.6.2" />
+    <PackageReference Include="ReactiveUI.Avalonia" Version="11.3.8" />
+    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="SharpHook" Version="7.1.1" />
+    <PackageReference Include="TextCopy" Version="6.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Krypton-Shared\Krypton-Shared.csproj" />
+  </ItemGroup>
+
+  <!-- Creates a proper macOS .app bundle after publishing to an osx-* RID -->
+  <Target Name="CreateMacOSAppBundle" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+    <PropertyGroup>
+      <_BundleDir>$([MSBuild]::NormalizePath('$(PublishDir)', '$(AssemblyName).app'))</_BundleDir>
+      <_ContentsDir>$([MSBuild]::NormalizePath('$(_BundleDir)', 'Contents'))</_ContentsDir>
+      <_MacOSDir>$([MSBuild]::NormalizePath('$(_ContentsDir)', 'MacOS'))</_MacOSDir>
+      <_ResourcesDir>$([MSBuild]::NormalizePath('$(_ContentsDir)', 'Resources'))</_ResourcesDir>
+    </PropertyGroup>
+
+    <!-- Rebuild the bundle directory from scratch each time -->
+    <RemoveDir Directories="$(_BundleDir)" />
+    <MakeDir Directories="$(_MacOSDir);$(_ResourcesDir)" />
+
+    <!-- Gather published files, excluding any prior .app directory -->
+    <ItemGroup>
+      <_BundleFiles Include="$(PublishDir)**/*" Exclude="$(_BundleDir)/**/*" />
+    </ItemGroup>
+
+    <!-- Place published output inside Contents/MacOS/ -->
+    <Copy SourceFiles="@(_BundleFiles)" DestinationFolder="$(_MacOSDir)" />
+
+    <!-- Place the Info.plist inside Contents/ -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/macOS/Info.plist" DestinationFolder="$(_ContentsDir)" />
+
+    <!-- Mark the executable (only when building natively on macOS) -->
+    <Exec Condition="'$(OS)' != 'Windows_NT'"
+          Command="chmod +x &quot;$(_MacOSDir)/$(AssemblyName)&quot;" />
+
+    <Message Text="macOS .app bundle: $(_BundleDir)" Importance="high" />
+  </Target>
+</Project>

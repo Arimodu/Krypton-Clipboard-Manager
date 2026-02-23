@@ -1,0 +1,182 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Krypton_Desktop.ViewModels"
+        xmlns:i="https://github.com/projektanker/icons.avalonia"
+        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="600"
+        x:Class="Krypton_Desktop.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Krypton Settings"
+        Width="500" Height="600"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Background="#1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#2D2D2D"/>
+            <Setter Property="BorderBrush" Value="#3D3D3D"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="Background" Value="#2D2D2D"/>
+            <Setter Property="BorderBrush" Value="#3D3D3D"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="TextBlock.header">
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,16,0,8"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style Selector="TextBlock.description">
+            <Setter Property="Foreground" Value="#888888"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0" Padding="20,16" Background="#252525">
+            <StackPanel Orientation="Horizontal">
+                <i:Icon Value="mdi-cog" FontSize="24" Foreground="#0078D4"/>
+                <TextBlock Text="Settings"
+                           Foreground="#FFFFFF"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" Padding="20,0">
+            <StackPanel>
+                <!-- Hotkey Section -->
+                <TextBlock Classes="header" Text="Hotkey"/>
+                <TextBlock Classes="label" Text="Activation Hotkey"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding HotkeyDisplayText}"
+                             IsReadOnly="True"
+                             IsEnabled="{Binding !IsRecordingHotkey}"/>
+                    <Button Grid.Column="1"
+                            Margin="8,0,0,0"
+                            Command="{Binding RecordHotkeyCommand}"
+                            Content="Change"
+                            Background="#3D3D3D"
+                            Foreground="#FFFFFF"
+                            BorderThickness="0"
+                            Padding="12,6"
+                            CornerRadius="4"
+                            IsVisible="{Binding !IsRecordingHotkey}"/>
+                    <TextBlock Grid.Column="1"
+                               Margin="8,0,0,0"
+                               Text="Press keys..."
+                               Foreground="#888888"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding IsRecordingHotkey}"/>
+                </Grid>
+                <TextBlock Classes="description"
+                           Text="The keyboard shortcut to show the clipboard popup. Default: Ctrl+Shift+V"/>
+
+                <!-- History Section -->
+                <TextBlock Classes="header" Text="History"/>
+                <TextBlock Classes="label" Text="Maximum History Items"/>
+                <NumericUpDown Value="{Binding MaxHistoryItems}"
+                               Minimum="10"
+                               Maximum="1000"
+                               Increment="10"
+                               Width="150"
+                               HorizontalAlignment="Left"/>
+                <TextBlock Classes="description"
+                           Text="The maximum number of clipboard items to keep in history."/>
+
+                <!-- Server Section -->
+                <TextBlock Classes="header" Text="Server Connection"/>
+                <TextBlock Classes="label" Text="Server Address"/>
+                <TextBox Text="{Binding ServerAddress}"
+                         Watermark="e.g., krypton.example.com"/>
+                <TextBlock Classes="description"
+                           Text="The hostname or IP address of your Krypton server."/>
+
+                <TextBlock Classes="label" Text="Server Port" Margin="0,12,0,4"/>
+                <NumericUpDown Value="{Binding ServerPort}"
+                               Minimum="1"
+                               Maximum="65535"
+                               Width="150"
+                               HorizontalAlignment="Left"/>
+
+                <TextBlock Classes="label" Text="API Key" Margin="0,12,0,4"/>
+                <TextBox Text="{Binding ApiKey}"
+                         PasswordChar="*"
+                         Watermark="kr_xxxxxxxx"/>
+                <TextBlock Classes="description"
+                           Text="Your API key for server authentication."/>
+
+                <CheckBox Content="Auto-connect on startup"
+                          IsChecked="{Binding AutoConnect}"
+                          Margin="0,12,0,0"/>
+
+                <CheckBox Content="Always search server (not just local history)"
+                          IsChecked="{Binding AlwaysSearchServer}"
+                          Margin="0,8,0,0"/>
+
+                <!-- Startup Section -->
+                <TextBlock Classes="header" Text="Startup"/>
+                <CheckBox Content="Start minimized to tray"
+                          IsChecked="{Binding StartMinimized}"/>
+                <CheckBox Content="Start with Windows"
+                          IsChecked="{Binding StartWithWindows}"
+                          Margin="0,8,0,0"/>
+
+                <!-- Debug Section (only visible in DEBUG builds) -->
+                <TextBlock Classes="header" Text="Debug" IsVisible="{Binding ShowDebugOptions}"/>
+                <Button Command="{Binding TestNotificationCommand}"
+                        Content="Test Notification"
+                        Background="#3D3D3D"
+                        Foreground="#FFFFFF"
+                        BorderThickness="0"
+                        Padding="12,6"
+                        CornerRadius="4"
+                        IsVisible="{Binding ShowDebugOptions}"/>
+
+                <Border Height="20"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Padding="20,12" Background="#252525">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Command="{Binding CancelCommand}"
+                        Content="Cancel"
+                        Background="#3D3D3D"
+                        Foreground="#FFFFFF"
+                        BorderThickness="0"
+                        Padding="16,8"
+                        CornerRadius="4"
+                        Margin="0,0,8,0"/>
+                <Button Command="{Binding SaveCommand}"
+                        Content="Save"
+                        Background="#0078D4"
+                        Foreground="#FFFFFF"
+                        BorderThickness="0"
+                        Padding="16,8"
+                        CornerRadius="4"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

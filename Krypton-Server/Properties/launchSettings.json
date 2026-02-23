@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Krypton-Server": {
+      "commandName": "Project",
+      "commandLineArgs": "start --debug"
+    }
+  }
+}

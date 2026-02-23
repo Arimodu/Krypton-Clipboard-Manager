@@ -1,0 +1,248 @@
+syntax = "proto3";
+
+package krypton;
+
+option csharp_namespace = "Krypton.Shared.Protocol";
+
+// ============================================
+// Packet Type Enum
+// ============================================
+enum PacketType {
+  PACKET_TYPE_UNKNOWN = 0;
+
+  // Connection lifecycle
+  HEARTBEAT = 1;
+  HEARTBEAT_ACK = 2;
+  CONNECT = 3;
+  CONNECT_ACK = 4;
+  DISCONNECT = 5;
+  SERVER_HELLO = 6;
+  START_TLS = 7;
+  START_TLS_ACK = 8;
+
+  // Authentication
+  AUTH_LOGIN = 10;
+  AUTH_REGISTER = 11;
+  AUTH_API_KEY = 12;
+  AUTH_RESPONSE = 13;
+  AUTH_LOGOUT = 14;
+
+  // Clipboard sync
+  CLIPBOARD_PUSH = 20;
+  CLIPBOARD_PUSH_ACK = 21;
+  CLIPBOARD_PULL = 22;
+  CLIPBOARD_HISTORY = 23;
+  CLIPBOARD_BROADCAST = 24;
+  CLIPBOARD_SEARCH = 25;
+  CLIPBOARD_SEARCH_RESULT = 26;
+  CLIPBOARD_MOVE_TO_TOP = 27;
+  CLIPBOARD_MOVE_TO_TOP_ACK = 28;
+  CLIPBOARD_DELETE = 29;
+  CLIPBOARD_DELETE_ACK = 30;
+
+  // Error
+  ERROR = 100;
+}
+
+// ============================================
+// Content Type Enum
+// ============================================
+enum ClipboardContentType {
+  CONTENT_TYPE_UNKNOWN = 0;
+  TEXT = 1;
+  IMAGE = 2;
+  FILE = 3;
+}
+
+// ============================================
+// Base Packet Wrapper
+// ============================================
+message KryptonPacket {
+  PacketType type = 1;
+  uint64 timestamp = 2;
+  uint32 sequence_id = 3;
+
+  oneof payload {
+    Heartbeat heartbeat = 10;
+    HeartbeatAck heartbeat_ack = 11;
+    Connect connect = 12;
+    ConnectAck connect_ack = 13;
+    Disconnect disconnect = 14;
+    ServerHello server_hello = 15;
+    StartTls start_tls = 16;
+    StartTlsAck start_tls_ack = 17;
+
+    AuthLogin auth_login = 20;
+    AuthRegister auth_register = 21;
+    AuthApiKey auth_api_key = 22;
+    AuthResponse auth_response = 23;
+    AuthLogout auth_logout = 24;
+
+    ClipboardPush clipboard_push = 30;
+    ClipboardPushAck clipboard_push_ack = 31;
+    ClipboardPull clipboard_pull = 32;
+    ClipboardHistory clipboard_history = 33;
+    ClipboardBroadcast clipboard_broadcast = 34;
+    ClipboardSearch clipboard_search = 35;
+    ClipboardSearchResult clipboard_search_result = 36;
+    ClipboardMoveToTop clipboard_move_to_top = 37;
+    ClipboardMoveToTopAck clipboard_move_to_top_ack = 38;
+    ClipboardDelete clipboard_delete = 39;
+    ClipboardDeleteAck clipboard_delete_ack = 40;
+
+    ErrorResponse error = 100;
+  }
+}
+
+// ============================================
+// Connection Messages
+// ============================================
+
+// Server sends this immediately upon connection (plain text)
+message ServerHello {
+  string server_version = 1;
+  bool tls_available = 2;
+  bool tls_required = 3;
+}
+
+// Client sends this to request TLS upgrade
+message StartTls {
+  // Empty
+}
+
+// Server acknowledges TLS upgrade request, client should start TLS handshake after receiving this
+message StartTlsAck {
+  bool success = 1;
+  string message = 2;
+}
+
+message Heartbeat {
+  // Empty ping
+}
+
+message HeartbeatAck {
+  // Empty pong
+}
+
+message Connect {
+  string client_version = 1;
+  string platform = 2;
+  string device_id = 3;
+  string device_name = 4;  // Hostname of the device
+}
+
+message ConnectAck {
+  string server_version = 1;
+  bool requires_auth = 2;
+}
+
+message Disconnect {
+  string reason = 1;
+}
+
+// ============================================
+// Authentication Messages
+// ============================================
+message AuthLogin {
+  string username = 1;
+  string password = 2;
+}
+
+message AuthRegister {
+  string username = 1;
+  string password = 2;
+}
+
+message AuthApiKey {
+  string api_key = 1;
+}
+
+message AuthResponse {
+  bool success = 1;
+  string message = 2;
+  string api_key = 3;
+  string user_id = 4;
+  bool is_admin = 5;
+}
+
+message AuthLogout {
+  // Empty
+}
+
+// ============================================
+// Clipboard Messages
+// ============================================
+message ClipboardEntry {
+  string id = 1;
+  ClipboardContentType content_type = 2;
+  bytes content = 3;
+  string content_preview = 4;
+  uint64 created_at = 5;
+  string source_device = 6;
+  string content_hash = 7;
+}
+
+message ClipboardPush {
+  ClipboardEntry entry = 1;
+}
+
+message ClipboardPushAck {
+  bool success = 1;
+  string entry_id = 2;
+  string message = 3;
+}
+
+message ClipboardPull {
+  int32 limit = 1;
+  uint64 since_timestamp = 2;
+  int32 offset = 3;  // For pagination
+}
+
+message ClipboardHistory {
+  repeated ClipboardEntry entries = 1;
+  int32 total_count = 2;
+  bool has_more = 3;
+}
+
+message ClipboardBroadcast {
+  ClipboardEntry entry = 1;
+  string from_device = 2;
+}
+
+message ClipboardSearch {
+  string query = 1;
+  int32 limit = 2;
+  uint64 before_timestamp = 3;
+}
+
+message ClipboardSearchResult {
+  repeated ClipboardEntry entries = 1;
+  int32 total_matches = 2;
+  bool has_more = 3;
+}
+
+message ClipboardMoveToTop {
+  string entry_id = 1;
+}
+
+message ClipboardMoveToTopAck {
+  bool success = 1;
+  string message = 2;
+}
+
+message ClipboardDelete {
+  string entry_id = 1;
+}
+
+message ClipboardDeleteAck {
+  bool success = 1;
+  string message = 2;
+}
+
+// ============================================
+// Error Message
+// ============================================
+message ErrorResponse {
+  int32 code = 1;
+  string message = 2;
+}

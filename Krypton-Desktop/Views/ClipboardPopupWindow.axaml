@@ -1,0 +1,234 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Krypton_Desktop.ViewModels"
+        xmlns:i="https://github.com/projektanker/icons.avalonia"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="500"
+        x:Class="Krypton_Desktop.Views.ClipboardPopupWindow"
+        x:DataType="vm:ClipboardPopupViewModel"
+        Title="Krypton Clipboard"
+        Width="400" Height="500"
+        WindowStartupLocation="Manual"
+        CanResize="False"
+        ShowInTaskbar="False"
+        SystemDecorations="BorderOnly"
+        Background="#1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#2D2D2D"/>
+            <Setter Property="BorderBrush" Value="#3D3D3D"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3D3D3D"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#0078D4"/>
+        </Style>
+    </Window.Styles>
+
+    <Border BorderBrush="#3D3D3D" BorderThickness="1" CornerRadius="8">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Search Bar -->
+            <Border Grid.Row="0" Padding="12" Background="#252525">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding SearchQuery}"
+                             Watermark="Search clipboard history..."
+                             CornerRadius="4"
+                             Padding="8,6"/>
+                    <Button Grid.Column="1"
+                            Margin="8,0,0,0"
+                            Command="{Binding CloseCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            ToolTip.Tip="Close">
+                        <i:Icon Value="mdi-close" FontSize="20" Foreground="#888888"/>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- History List -->
+            <ListBox Grid.Row="1"
+                     ItemsSource="{Binding Items}"
+                     SelectedItem="{Binding SelectedItem}"
+                     Background="Transparent"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ClipboardItemViewModel">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <!-- Clickable row for paste -->
+                            <Button Grid.Column="0"
+                                    Command="{Binding $parent[ListBox].((vm:ClipboardPopupViewModel)DataContext).PasteItemCommand}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="4"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    Cursor="Hand">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <!-- Icon -->
+                                    <Border Grid.Column="0"
+                                            Width="32" Height="32"
+                                            CornerRadius="4"
+                                            Background="#3D3D3D"
+                                            Margin="0,0,12,0"
+                                            VerticalAlignment="Top">
+                                        <i:Icon Value="mdi-content-copy" FontSize="16" Foreground="#888888"/>
+                                    </Border>
+
+                                    <!-- Content -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Preview}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxLines="{Binding PreviewLines}"
+                                                   Foreground="#FFFFFF"
+                                                   FontSize="13"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <TextBlock Text="{Binding TimeAgo}"
+                                                       Foreground="#888888"
+                                                       FontSize="11"/>
+                                            <i:Icon Value="mdi-cloud-check"
+                                                    FontSize="12"
+                                                    Foreground="#4CAF50"
+                                                    Margin="8,0,0,0"
+                                                    IsVisible="{Binding IsSynced}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+
+                            <!-- Delete button -->
+                            <Button Grid.Column="1"
+                                    Command="{Binding $parent[ListBox].((vm:ClipboardPopupViewModel)DataContext).DeleteItemCommand}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="6"
+                                    VerticalAlignment="Center"
+                                    ToolTip.Tip="Delete">
+                                <i:Icon Value="mdi-delete" FontSize="16" Foreground="#888888"/>
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Empty State -->
+            <StackPanel Grid.Row="1"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        IsVisible="{Binding !Items.Count}">
+                <i:Icon Value="mdi-clipboard-text-outline" FontSize="48" Foreground="#555555"/>
+                <TextBlock Text="No clipboard history"
+                           Foreground="#888888"
+                           Margin="0,12,0,0"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Loading More Indicator -->
+            <Border Grid.Row="1"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Stretch"
+                    Background="#252525"
+                    Padding="12,8"
+                    IsVisible="{Binding IsLoadingMore}">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <i:Icon Value="mdi-loading" FontSize="16" Foreground="#888888"/>
+                    <TextBlock Text="Loading more..."
+                               Foreground="#888888"
+                               Margin="8,0,0,0"
+                               FontSize="12"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Load More Button -->
+            <Border Grid.Row="1"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Stretch"
+                    Background="#252525"
+                    Padding="8"
+                    IsVisible="{Binding HasMoreServerEntries}">
+                <Button Command="{Binding LoadMoreCommand}"
+                        HorizontalAlignment="Stretch"
+                        Background="#3D3D3D"
+                        Foreground="#FFFFFF"
+                        BorderThickness="0"
+                        Padding="8,6"
+                        CornerRadius="4"
+                        IsEnabled="{Binding !IsLoadingMore}">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <i:Icon Value="mdi-arrow-down" FontSize="14" Margin="0,0,6,0"/>
+                        <TextBlock Text="Load More" FontSize="12"/>
+                    </StackPanel>
+                </Button>
+            </Border>
+
+            <!-- Reached End Message -->
+            <Border Grid.Row="1"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Center"
+                    Padding="12,6"
+                    Margin="0,0,0,8"
+                    IsVisible="{Binding ReachedEnd}">
+                <TextBlock Text="You've reached the end"
+                           Foreground="#555555"
+                           FontSize="11"/>
+            </Border>
+
+            <!-- Footer -->
+            <Border Grid.Row="2" Padding="12,8" Background="#252525">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button Command="{Binding SearchServerCommand}"
+                                Background="#3D3D3D"
+                                Foreground="#FFFFFF"
+                                BorderThickness="0"
+                                Padding="12,6"
+                                CornerRadius="4"
+                                FontSize="12"
+                                ToolTip.Tip="Search server history"
+                                IsVisible="{Binding CanSearchServer}"
+                                IsEnabled="{Binding !IsSearchingServer}">
+                            <StackPanel Orientation="Horizontal">
+                                <i:Icon Value="mdi-cloud-search" FontSize="14" Margin="0,0,6,0"/>
+                                <TextBlock Text="Server"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ShowLocalCommand}"
+                                Content="Local"
+                                Background="#0078D4"
+                                Foreground="#FFFFFF"
+                                BorderThickness="0"
+                                Padding="12,6"
+                                CornerRadius="4"
+                                FontSize="12"
+                                Margin="4,0,0,0"
+                                IsVisible="{Binding ShowingServerResults}"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding Items.Count, StringFormat='{}{0} items'}"
+                               Foreground="#888888"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               FontSize="12"/>
+                    <Button Grid.Column="2"
+                            Command="{Binding ClearHistoryCommand}"
+                            Content="Clear All"
+                            Background="#3D3D3D"
+                            Foreground="#FFFFFF"
+                            BorderThickness="0"
+                            Padding="12,6"
+                            CornerRadius="4"
+                            FontSize="12"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
