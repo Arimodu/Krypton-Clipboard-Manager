@@ -26,4 +26,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Removes intermediate build output after every publish to keep bin/ clean -->
+  <Target Name="CleanAfterPublish" AfterTargets="Publish">
+    <RemoveDir Directories="$(OutputPath)" />
+    <RemoveDir Directories="$(IntermediateOutputPath)" />
+  </Target>
+
 </Project>

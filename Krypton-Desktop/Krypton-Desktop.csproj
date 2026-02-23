@@ -61,6 +61,9 @@
     <!-- Place published output inside Contents/MacOS/ -->
     <Copy SourceFiles="@(_BundleFiles)" DestinationFolder="$(_MacOSDir)" />
 
+    <!-- Remove loose files from publish root so only the .app bundle remains -->
+    <Delete Files="@(_BundleFiles)" />
+
     <!-- Place the Info.plist inside Contents/ -->
     <Copy SourceFiles="$(MSBuildProjectDirectory)/macOS/Info.plist" DestinationFolder="$(_ContentsDir)" />
 
@@ -69,5 +72,11 @@
           Command="chmod +x &quot;$(_MacOSDir)/$(AssemblyName)&quot;" />
 
     <Message Text="macOS .app bundle: $(_BundleDir)" Importance="high" />
+  </Target>
+
+  <!-- Removes intermediate build output after every publish to keep bin/ clean -->
+  <Target Name="CleanAfterPublish" AfterTargets="Publish">
+    <RemoveDir Directories="$(OutputPath)" />
+    <RemoveDir Directories="$(IntermediateOutputPath)" />
   </Target>
 </Project>
