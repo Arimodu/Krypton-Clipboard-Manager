@@ -26,6 +26,7 @@ public class ClipboardMonitorService : IDisposable
     private readonly ClipboardHistoryService _historyService;
     private readonly Timer _pollTimer;
     private WindowsClipboardListener? _windowsListener;
+    private MacOSClipboardListener? _macOSListener;
     private string? _lastClipboardHash;
     private bool _isMonitoring;
     private bool _isPasting;
@@ -77,6 +78,32 @@ public class ClipboardMonitorService : IDisposable
                 _windowsListener = null;
             }
         }
+        else if (OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                _macOSListener = new MacOSClipboardListener();
+                _macOSListener.ClipboardChanged += OnMacOSClipboardChanged;
+
+                if (_macOSListener.Start())
+                {
+                    _currentMode = ClipboardMonitoringMode.EventDriven;
+                    Log.Information("Clipboard monitoring started (macOS changeCount)");
+                    return;
+                }
+
+                // Failed to start, clean up
+                _macOSListener.ClipboardChanged -= OnMacOSClipboardChanged;
+                _macOSListener.Dispose();
+                _macOSListener = null;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to start macOS clipboard listener, falling back to polling");
+                _macOSListener?.Dispose();
+                _macOSListener = null;
+            }
+        }
 
         // Fall back to polling
         _currentMode = ClipboardMonitoringMode.Polling;
@@ -99,6 +126,15 @@ public class ClipboardMonitorService : IDisposable
             _windowsListener = null;
         }
 
+        // Stop macOS listener if active
+        if (OperatingSystem.IsMacOS() && _macOSListener != null)
+        {
+            _macOSListener.ClipboardChanged -= OnMacOSClipboardChanged;
+            _macOSListener.Stop();
+            _macOSListener.Dispose();
+            _macOSListener = null;
+        }
+
         // Stop polling timer
         _pollTimer.Change(Timeout.Infinite, Timeout.Infinite);
         _currentMode = ClipboardMonitoringMode.Stopped;
@@ -118,6 +154,22 @@ public class ClipboardMonitorService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Error handling Windows clipboard change");
+        }
+    }
+
+    private async void OnMacOSClipboardChanged(object? sender, EventArgs e)
+    {
+        if (!_isMonitoring || _isPasting) return;
+
+        try
+        {
+            // Small delay to ensure the pasteboard has committed its new contents
+            await Task.Delay(50);
+            await CheckClipboardAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Error handling macOS clipboard change");
         }
     }
 
@@ -231,8 +283,8 @@ public class ClipboardMonitorService : IDisposable
         Stop();
         _pollTimer.Dispose();
         if (OperatingSystem.IsWindows())
-        {
             _windowsListener?.Dispose();
-        }
+        if (OperatingSystem.IsMacOS())
+            _macOSListener?.Dispose();
     }
 }

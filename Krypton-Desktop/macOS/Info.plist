@@ -26,5 +26,11 @@
     <string>11.0</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
+    <!-- Hides the Dock icon and prevents an app menu bar; tray/status-bar items still work -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Declare that the app uses Accessibility APIs (required for global hotkeys) -->
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Krypton needs Accessibility access to register the global clipboard hotkey.</string>
 </dict>
 </plist>
