@@ -27,6 +27,7 @@ public class ClipboardMonitorService : IDisposable
     private readonly Timer _pollTimer;
     private WindowsClipboardListener? _windowsListener;
     private MacOSClipboardListener? _macOSListener;
+    private LinuxClipboardListener? _linuxListener;
     private string? _lastClipboardHash;
     private bool _isMonitoring;
     private bool _isPasting;
@@ -104,6 +105,32 @@ public class ClipboardMonitorService : IDisposable
                 _macOSListener = null;
             }
         }
+        else if (OperatingSystem.IsLinux())
+        {
+            try
+            {
+                _linuxListener = new LinuxClipboardListener();
+                _linuxListener.ClipboardChanged += OnLinuxClipboardChanged;
+
+                if (_linuxListener.Start())
+                {
+                    _currentMode = ClipboardMonitoringMode.EventDriven;
+                    Log.Information("Clipboard monitoring started (Linux event-driven)");
+                    return;
+                }
+
+                // Failed to start, clean up
+                _linuxListener.ClipboardChanged -= OnLinuxClipboardChanged;
+                _linuxListener.Dispose();
+                _linuxListener = null;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to start Linux clipboard listener, falling back to polling");
+                _linuxListener?.Dispose();
+                _linuxListener = null;
+            }
+        }
 
         // Fall back to polling
         _currentMode = ClipboardMonitoringMode.Polling;
@@ -133,6 +160,15 @@ public class ClipboardMonitorService : IDisposable
             _macOSListener.Stop();
             _macOSListener.Dispose();
             _macOSListener = null;
+        }
+
+        // Stop Linux listener if active
+        if (OperatingSystem.IsLinux() && _linuxListener != null)
+        {
+            _linuxListener.ClipboardChanged -= OnLinuxClipboardChanged;
+            _linuxListener.Stop();
+            _linuxListener.Dispose();
+            _linuxListener = null;
         }
 
         // Stop polling timer
@@ -170,6 +206,22 @@ public class ClipboardMonitorService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Error handling macOS clipboard change");
+        }
+    }
+
+    private async void OnLinuxClipboardChanged(object? sender, EventArgs e)
+    {
+        if (!_isMonitoring || _isPasting) return;
+
+        try
+        {
+            // Small delay to allow the clipboard owner to finish writing
+            await Task.Delay(50);
+            await CheckClipboardAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Error handling Linux clipboard change");
         }
     }
 
@@ -286,5 +338,7 @@ public class ClipboardMonitorService : IDisposable
             _windowsListener?.Dispose();
         if (OperatingSystem.IsMacOS())
             _macOSListener?.Dispose();
+        if (OperatingSystem.IsLinux())
+            _linuxListener?.Dispose();
     }
 }
