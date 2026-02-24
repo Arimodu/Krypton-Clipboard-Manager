@@ -65,6 +65,7 @@ public class StatusViewModel : ViewModelBase
     public string ClipboardMonitoringMode => _clipboardMonitor.CurrentMode switch
     {
         Services.ClipboardMonitoringMode.EventDriven => "Event-driven (Windows)",
+        Services.ClipboardMonitoringMode.EfficientPolling => "macOS NSPasteboard Polling",
         Services.ClipboardMonitoringMode.Polling => "Polling (500ms)",
         _ => "Stopped"
     };
