@@ -1,5 +1,8 @@
 using Krypton.Server.Configuration;
+using Krypton.Server.Database;
 using Krypton.Server.Database.Repositories;
+using Krypton.Shared.Protocol;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -91,5 +94,51 @@ public class CleanupService : BackgroundService
         {
             _logger.LogDebug("Cleanup check completed: no old entries to delete");
         }
+
+        await RunImageCleanupAsync(scope, cancellationToken);
+    }
+
+    private async Task RunImageCleanupAsync(IServiceScope scope, CancellationToken cancellationToken)
+    {
+        if (_config.Images.RetentionDays <= 0)
+            return;
+
+        var cutoff = DateTime.UtcNow.AddDays(-_config.Images.RetentionDays);
+        var db = scope.ServiceProvider.GetRequiredService<KryptonDbContext>();
+
+        var oldImages = await db.ClipboardEntries
+            .Where(e => e.ContentType == ClipboardContentType.Image && e.CreatedAt < cutoff)
+            .ToListAsync(cancellationToken);
+
+        if (oldImages.Count == 0)
+        {
+            _logger.LogDebug("Image cleanup: no old image entries to delete");
+            return;
+        }
+
+        foreach (var img in oldImages)
+        {
+            if (img.ExternalStoragePath != null)
+            {
+                var fullPath = Path.Combine(_config.Images.StoragePath, img.ExternalStoragePath);
+                try
+                {
+                    if (File.Exists(fullPath))
+                        File.Delete(fullPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete image file: {Path}", fullPath);
+                }
+            }
+        }
+
+        db.ClipboardEntries.RemoveRange(oldImages);
+        await db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Image cleanup completed: deleted {Count} image entries older than {Days} days",
+            oldImages.Count,
+            _config.Images.RetentionDays);
     }
 }

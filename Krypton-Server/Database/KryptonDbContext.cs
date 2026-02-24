@@ -46,6 +46,11 @@ public class KryptonDbContext : DbContext
             entity.HasIndex(e => e.UserId);
             entity.HasIndex(e => new { e.UserId, e.CreatedAt });
             entity.HasIndex(e => new { e.UserId, e.ContentHash });
+            entity.HasIndex(e => new { e.ContentType, e.CreatedAt });
+
+            entity.Property(e => e.ExternalStoragePath)
+                .HasMaxLength(512)
+                .IsRequired(false);
         });
     }
 }

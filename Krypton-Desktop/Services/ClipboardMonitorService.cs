@@ -139,6 +139,23 @@ public class ClipboardMonitorService : IDisposable
     }
 
     /// <summary>
+    /// Sets an image to the clipboard.
+    /// </summary>
+    public async Task SetImageAsync(byte[] pngBytes)
+    {
+        BeginPaste();
+        try
+        {
+            _lastClipboardHash = ComputeHash(pngBytes);
+            await ClipboardImageHelper.WriteImageAsync(pngBytes);
+        }
+        finally
+        {
+            EndPaste();
+        }
+    }
+
+    /// <summary>
     /// Sets text to the clipboard.
     /// </summary>
     public async Task SetTextAsync(string text)
@@ -171,6 +188,22 @@ public class ClipboardMonitorService : IDisposable
 
     private async Task CheckClipboardAsync()
     {
+        // Try image BEFORE text — images take priority
+        var pngBytes = await ClipboardImageHelper.TryReadImageAsPngAsync();
+        if (pngBytes is { Length: > 0 })
+        {
+            var imageHash = ComputeHash(pngBytes);
+            if (imageHash == _lastClipboardHash) return;
+            _lastClipboardHash = imageHash;
+
+            var imageItem = ClipboardItem.FromImage(pngBytes, Environment.MachineName);
+            _historyService.Add(imageItem);
+            ClipboardChanged?.Invoke(this, imageItem);
+
+            Log.Debug("Clipboard changed: {Preview}", imageItem.Preview);
+            return;
+        }
+
         var text = await ClipboardService.GetTextAsync();
         if (string.IsNullOrEmpty(text)) return;
 

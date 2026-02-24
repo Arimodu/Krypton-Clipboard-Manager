@@ -3,6 +3,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Determine target platform: true when RID is win-* or no RID and building on Windows -->
     <_IsWindowsTarget Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">true</_IsWindowsTarget>

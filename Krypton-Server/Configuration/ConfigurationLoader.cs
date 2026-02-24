@@ -58,6 +58,11 @@ public static class ConfigurationLoader
             config.Logging = ParseLoggingSection(loggingTable);
         }
 
+        if (model.TryGetValue("images", out var imagesObj) && imagesObj is TomlTable imagesTable)
+        {
+            config.Images = ParseImageStorageSection(imagesTable);
+        }
+
         return config;
     }
 
@@ -174,6 +179,26 @@ public static class ConfigurationLoader
         return section;
     }
 
+    private static ImageStorageConfig ParseImageStorageSection(TomlTable table)
+    {
+        var section = new ImageStorageConfig();
+
+        if (table.TryGetValue("storage_mode", out var mode))
+        {
+            section.StorageMode = Enum.TryParse<ImageStorageMode>(mode?.ToString(), true, out var parsedMode)
+                ? parsedMode
+                : ImageStorageMode.Database;
+        }
+
+        if (table.TryGetValue("storage_path", out var path))
+            section.StoragePath = path?.ToString() ?? section.StoragePath;
+
+        if (table.TryGetValue("retention_days", out var days))
+            section.RetentionDays = Convert.ToInt32(days);
+
+        return section;
+    }
+
     public static void EnsureConfigDirectoryExists(string configPath)
     {
         var directory = Path.GetDirectoryName(configPath);
@@ -225,6 +250,11 @@ public static class ConfigurationLoader
             [logging]
             level = "Information"  # Options: Verbose, Debug, Information, Warning, Error, Fatal
             file_path = "/var/log/krypton/server.log"
+
+            [images]
+            storage_mode = "database"  # Options: "database" (blob) or "filesystem" (external files)
+            storage_path = "images"    # Directory for image files when storage_mode = filesystem
+            retention_days = 30        # Days to retain image entries; 0 = never auto-delete
             """;
     }
 }
