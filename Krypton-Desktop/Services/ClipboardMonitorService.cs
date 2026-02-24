@@ -1,6 +1,4 @@
 using System;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Krypton_Desktop.Models;
@@ -10,247 +8,123 @@ using TextCopy;
 
 namespace Krypton_Desktop.Services;
 
-public enum ClipboardMonitoringMode
-{
-    Stopped,
-    Polling,
-    /// <summary>
-    /// Polls a cheap metadata counter (e.g. NSPasteboard.changeCount) rather than
-    /// reading clipboard data. Faster and lighter than full polling, but not truly
-    /// event-driven.
-    /// </summary>
-    EfficientPolling,
-    EventDriven
-}
-
 /// <summary>
 /// Monitors the system clipboard for changes.
-/// Uses event-driven monitoring on Windows, falls back to polling on other platforms.
+/// Tries a platform-specific <see cref="IClipboardListener"/> first; falls back to
+/// a 500 ms polling timer if the listener is unavailable on this system.
 /// </summary>
 public class ClipboardMonitorService : IDisposable
 {
     private readonly ClipboardHistoryService _historyService;
     private readonly Timer _pollTimer;
-    private WindowsClipboardListener? _windowsListener;
-    private MacOSClipboardListener? _macOSListener;
-    private LinuxClipboardListener? _linuxListener;
+    private IClipboardListener? _activeListener;
     private string? _lastClipboardHash;
     private bool _isMonitoring;
     private bool _isPasting;
-    private ClipboardMonitoringMode _currentMode = ClipboardMonitoringMode.Stopped;
 
     public event EventHandler<ClipboardItem>? ClipboardChanged;
 
     public bool IsMonitoring => _isMonitoring;
-    public ClipboardMonitoringMode CurrentMode => _currentMode;
+
+    /// <summary>
+    /// Human-readable description of the active monitoring mechanism, suitable for
+    /// display in the status UI. Built by concatenating the active listener's
+    /// <see cref="IClipboardListener.ListenerType"/>, <see cref="IClipboardListener.OS"/>,
+    /// and <see cref="IClipboardListener.Method"/> properties.
+    /// </summary>
+    public string CurrentModeDescription =>
+        !_isMonitoring ? "Stopped" :
+        _activeListener is { IsListening: true } l
+            ? $"{l.ListenerType} – {l.OS} / {l.Method}"
+            : "Polling (500ms)";
 
     public ClipboardMonitorService(ClipboardHistoryService historyService)
     {
         _historyService = historyService;
-
-        // Poll every 500ms (used as fallback or on non-Windows)
         _pollTimer = new Timer(PollClipboard, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     public void Start()
     {
         if (_isMonitoring) return;
-
         _isMonitoring = true;
 
-        // Try event-driven monitoring on Windows
-        if (OperatingSystem.IsWindows())
+        _activeListener = CreatePlatformListener();
+
+        if (_activeListener != null)
         {
+            _activeListener.ClipboardChanged += OnListenerClipboardChanged;
             try
             {
-                _windowsListener = new WindowsClipboardListener();
-                _windowsListener.ClipboardChanged += OnWindowsClipboardChanged;
-
-                if (_windowsListener.Start())
+                if (_activeListener.Start())
                 {
-                    _currentMode = ClipboardMonitoringMode.EventDriven;
-                    Log.Information("Clipboard monitoring started (event-driven)");
+                    Log.Information("Clipboard monitoring started ({Description})", CurrentModeDescription);
                     return;
                 }
-
-                // Failed to start, clean up
-                _windowsListener.ClipboardChanged -= OnWindowsClipboardChanged;
-                _windowsListener.Dispose();
-                _windowsListener = null;
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to start Windows clipboard listener, falling back to polling");
-                _windowsListener?.Dispose();
-                _windowsListener = null;
+                Log.Warning(ex, "Failed to start clipboard listener, falling back to polling");
             }
-        }
-        else if (OperatingSystem.IsMacOS())
-        {
-            try
-            {
-                _macOSListener = new MacOSClipboardListener();
-                _macOSListener.ClipboardChanged += OnMacOSClipboardChanged;
 
-                if (_macOSListener.Start())
-                {
-                    _currentMode = ClipboardMonitoringMode.EfficientPolling;
-                    Log.Information("Clipboard monitoring started (macOS changeCount polling)");
-                    return;
-                }
-
-                // Failed to start, clean up
-                _macOSListener.ClipboardChanged -= OnMacOSClipboardChanged;
-                _macOSListener.Dispose();
-                _macOSListener = null;
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Failed to start macOS clipboard listener, falling back to polling");
-                _macOSListener?.Dispose();
-                _macOSListener = null;
-            }
-        }
-        else if (OperatingSystem.IsLinux())
-        {
-            try
-            {
-                _linuxListener = new LinuxClipboardListener();
-                _linuxListener.ClipboardChanged += OnLinuxClipboardChanged;
-
-                if (_linuxListener.Start())
-                {
-                    _currentMode = ClipboardMonitoringMode.EventDriven;
-                    Log.Information("Clipboard monitoring started (Linux event-driven)");
-                    return;
-                }
-
-                // Failed to start, clean up
-                _linuxListener.ClipboardChanged -= OnLinuxClipboardChanged;
-                _linuxListener.Dispose();
-                _linuxListener = null;
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Failed to start Linux clipboard listener, falling back to polling");
-                _linuxListener?.Dispose();
-                _linuxListener = null;
-            }
+            _activeListener.ClipboardChanged -= OnListenerClipboardChanged;
+            _activeListener.Dispose();
+            _activeListener = null;
         }
 
-        // Fall back to polling
-        _currentMode = ClipboardMonitoringMode.Polling;
+        // Fallback: data polling
         _pollTimer.Change(500, 500);
-        Log.Information("Clipboard monitoring started (polling)");
+        Log.Information("Clipboard monitoring started ({Description})", CurrentModeDescription);
     }
 
     public void Stop()
     {
         if (!_isMonitoring) return;
-
         _isMonitoring = false;
 
-        // Stop Windows listener if active
-        if (OperatingSystem.IsWindows() && _windowsListener != null)
+        if (_activeListener != null)
         {
-            _windowsListener.ClipboardChanged -= OnWindowsClipboardChanged;
-            _windowsListener.Stop();
-            _windowsListener.Dispose();
-            _windowsListener = null;
+            _activeListener.ClipboardChanged -= OnListenerClipboardChanged;
+            _activeListener.Stop();
+            _activeListener.Dispose();
+            _activeListener = null;
         }
 
-        // Stop macOS listener if active
-        if (OperatingSystem.IsMacOS() && _macOSListener != null)
-        {
-            _macOSListener.ClipboardChanged -= OnMacOSClipboardChanged;
-            _macOSListener.Stop();
-            _macOSListener.Dispose();
-            _macOSListener = null;
-        }
-
-        // Stop Linux listener if active
-        if (OperatingSystem.IsLinux() && _linuxListener != null)
-        {
-            _linuxListener.ClipboardChanged -= OnLinuxClipboardChanged;
-            _linuxListener.Stop();
-            _linuxListener.Dispose();
-            _linuxListener = null;
-        }
-
-        // Stop polling timer
         _pollTimer.Change(Timeout.Infinite, Timeout.Infinite);
-        _currentMode = ClipboardMonitoringMode.Stopped;
         Log.Information("Clipboard monitoring stopped");
     }
 
-    private async void OnWindowsClipboardChanged(object? sender, EventArgs e)
+    private static IClipboardListener? CreatePlatformListener()
+    {
+        if (OperatingSystem.IsWindows()) return new WindowsClipboardListener();
+        if (OperatingSystem.IsMacOS())  return new MacOSClipboardListener();
+        if (OperatingSystem.IsLinux())  return new LinuxClipboardListener();
+        return null;
+    }
+
+    private async void OnListenerClipboardChanged(object? sender, EventArgs e)
     {
         if (!_isMonitoring || _isPasting) return;
 
         try
         {
-            // Small delay to ensure clipboard is ready
+            // Brief delay to let the clipboard owner finish writing before we read.
             await Task.Delay(50);
             await CheckClipboardAsync();
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Error handling Windows clipboard change");
+            Log.Warning(ex, "Error handling clipboard change event");
         }
     }
 
-    private async void OnMacOSClipboardChanged(object? sender, EventArgs e)
-    {
-        if (!_isMonitoring || _isPasting) return;
+    /// <summary>Temporarily pauses monitoring while pasting to avoid capturing our own paste.</summary>
+    public void BeginPaste() => _isPasting = true;
 
-        try
-        {
-            // Small delay to ensure the pasteboard has committed its new contents
-            await Task.Delay(50);
-            await CheckClipboardAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Error handling macOS clipboard change");
-        }
-    }
+    /// <summary>Resumes monitoring after a paste operation.</summary>
+    public void EndPaste() => Task.Delay(200).ContinueWith(_ => _isPasting = false);
 
-    private async void OnLinuxClipboardChanged(object? sender, EventArgs e)
-    {
-        if (!_isMonitoring || _isPasting) return;
-
-        try
-        {
-            // Small delay to allow the clipboard owner to finish writing
-            await Task.Delay(50);
-            await CheckClipboardAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Error handling Linux clipboard change");
-        }
-    }
-
-    /// <summary>
-    /// Temporarily pauses monitoring while pasting to avoid capturing our own paste.
-    /// </summary>
-    public void BeginPaste()
-    {
-        _isPasting = true;
-    }
-
-    /// <summary>
-    /// Resumes monitoring after a paste operation.
-    /// </summary>
-    public void EndPaste()
-    {
-        // Delay resuming to avoid capturing the paste
-        Task.Delay(200).ContinueWith(_ => _isPasting = false);
-    }
-
-    /// <summary>
-    /// Sets an image to the clipboard.
-    /// </summary>
+    /// <summary>Sets an image to the clipboard.</summary>
     public async Task SetImageAsync(byte[] pngBytes)
     {
         BeginPaste();
@@ -259,15 +133,10 @@ public class ClipboardMonitorService : IDisposable
             _lastClipboardHash = ComputeHash(pngBytes);
             await ClipboardImageHelper.WriteImageAsync(pngBytes);
         }
-        finally
-        {
-            EndPaste();
-        }
+        finally { EndPaste(); }
     }
 
-    /// <summary>
-    /// Sets text to the clipboard.
-    /// </summary>
+    /// <summary>Sets text to the clipboard.</summary>
     public async Task SetTextAsync(string text)
     {
         BeginPaste();
@@ -276,24 +145,15 @@ public class ClipboardMonitorService : IDisposable
             await ClipboardService.SetTextAsync(text);
             _lastClipboardHash = ComputeHash(System.Text.Encoding.UTF8.GetBytes(text));
         }
-        finally
-        {
-            EndPaste();
-        }
+        finally { EndPaste(); }
     }
 
     private async void PollClipboard(object? state)
     {
         if (!_isMonitoring || _isPasting) return;
 
-        try
-        {
-            await CheckClipboardAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Error polling clipboard");
-        }
+        try { await CheckClipboardAsync(); }
+        catch (Exception ex) { Log.Warning(ex, "Error polling clipboard"); }
     }
 
     private async Task CheckClipboardAsync()
@@ -309,7 +169,6 @@ public class ClipboardMonitorService : IDisposable
             var imageItem = ClipboardItem.FromImage(pngBytes, Environment.MachineName);
             _historyService.Add(imageItem);
             ClipboardChanged?.Invoke(this, imageItem);
-
             Log.Debug("Clipboard changed: {Preview}", imageItem.Preview);
             return;
         }
@@ -319,32 +178,24 @@ public class ClipboardMonitorService : IDisposable
 
         var hash = ComputeHash(System.Text.Encoding.UTF8.GetBytes(text));
         if (hash == _lastClipboardHash) return;
-
         _lastClipboardHash = hash;
 
         var item = ClipboardItem.FromText(text);
         _historyService.Add(item);
         ClipboardChanged?.Invoke(this, item);
-
         Log.Debug("Clipboard changed: {Preview}", item.Preview[..Math.Min(50, item.Preview.Length)]);
     }
 
     private static string ComputeHash(byte[] content)
     {
         using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var hash = sha256.ComputeHash(content);
-        return Convert.ToHexString(hash);
+        return Convert.ToHexString(sha256.ComputeHash(content));
     }
 
     public void Dispose()
     {
         Stop();
         _pollTimer.Dispose();
-        if (OperatingSystem.IsWindows())
-            _windowsListener?.Dispose();
-        if (OperatingSystem.IsMacOS())
-            _macOSListener?.Dispose();
-        if (OperatingSystem.IsLinux())
-            _linuxListener?.Dispose();
+        _activeListener?.Dispose();
     }
 }

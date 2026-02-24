@@ -12,9 +12,9 @@ namespace Krypton_Desktop.Services.Platform;
 /// text, so we can poll at a short interval without meaningful CPU overhead.
 /// </summary>
 [SupportedOSPlatform("macos")]
-public sealed class MacOSClipboardListener : IDisposable
+public sealed class MacOSClipboardListener : IClipboardListener
 {
-    private const int PollIntervalMs = 250;
+    private int _pollIntervalMs = 250;
 
     [DllImport("/usr/lib/libobjc.A.dylib")]
     private static extern IntPtr objc_getClass(string name);
@@ -36,6 +36,20 @@ public sealed class MacOSClipboardListener : IDisposable
     private nint _lastChangeCount;
     private volatile bool _isRunning;
     private bool _isDisposed;
+
+    public string OS => "macOS";
+    public string Method => "NSPasteboard changeCount";
+    public ClipboardListenerType ListenerType => ClipboardListenerType.EfficientPolling;
+    public int? PollIntervalMs
+    {
+        get => _pollIntervalMs;
+        set
+        {
+            if (value is null) return;
+            _pollIntervalMs = value.Value;
+            if (_isRunning) _timer?.Change(value.Value, value.Value);
+        }
+    }
 
     public event EventHandler? ClipboardChanged;
     public bool IsListening => _isRunning;
@@ -67,9 +81,9 @@ public sealed class MacOSClipboardListener : IDisposable
             _lastChangeCount = objc_msgSend_nint(_pasteboard, _changeCountSel);
 
             _isRunning = true;
-            _timer = new Timer(Poll, null, PollIntervalMs, PollIntervalMs);
+            _timer = new Timer(Poll, null, _pollIntervalMs, _pollIntervalMs);
 
-            Log.Information("macOS clipboard listener started (polling changeCount every {Interval}ms)", PollIntervalMs);
+            Log.Information("macOS clipboard listener started (polling changeCount every {Interval}ms)", _pollIntervalMs);
             return true;
         }
         catch (Exception ex)

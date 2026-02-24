@@ -11,7 +11,7 @@ namespace Krypton_Desktop.Services.Platform;
 /// Creates a message-only window to receive WM_CLIPBOARDUPDATE notifications.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class WindowsClipboardListener : IDisposable
+public sealed class WindowsClipboardListener : IClipboardListener
 {
     private const int WM_CLIPBOARDUPDATE = 0x031D;
     private const int WM_DESTROY = 0x0002;
@@ -104,6 +104,11 @@ public sealed class WindowsClipboardListener : IDisposable
     private Thread? _messageThread;
     private volatile bool _isRunning;
     private bool _isDisposed;
+
+    public string OS => "Windows";
+    public string Method => "WM_CLIPBOARDUPDATE";
+    public ClipboardListenerType ListenerType => ClipboardListenerType.EventDriven;
+    public int? PollIntervalMs { get => null; set { } }
 
     public event EventHandler? ClipboardChanged;
     public bool IsListening => _hwnd != IntPtr.Zero && _isRunning;

@@ -23,7 +23,7 @@ namespace Krypton_Desktop.Services.Platform;
 ///   3. Fallback — returns <c>false</c>; caller should fall back to polling.
 /// </summary>
 [SupportedOSPlatform("linux")]
-public sealed class LinuxClipboardListener : IDisposable
+public sealed class LinuxClipboardListener : IClipboardListener
 {
     // ── X11 / XFixes P/Invoke ────────────────────────────────────────────────
 
@@ -76,6 +76,12 @@ public sealed class LinuxClipboardListener : IDisposable
     // X11 resources
     private Thread? _x11Thread;
     private IntPtr _x11Display;
+
+    public string OS => "Linux";
+    // Set during Start() once the active strategy is determined
+    public string Method { get; private set; } = string.Empty;
+    public ClipboardListenerType ListenerType { get; private set; } = ClipboardListenerType.EventDriven;
+    public int? PollIntervalMs { get => null; set { } }
 
     public event EventHandler? ClipboardChanged;
     public bool IsListening => _isRunning;
@@ -159,6 +165,8 @@ public sealed class LinuxClipboardListener : IDisposable
 
             _watcher.EnableRaisingEvents = true;
 
+            Method = "Wayland inotify";
+            ListenerType = ClipboardListenerType.EventDriven;
             Log.Information("Linux clipboard listener started (Wayland / wl-paste --watch + inotify)");
             return true;
         }
@@ -238,6 +246,8 @@ public sealed class LinuxClipboardListener : IDisposable
             };
             _x11Thread.Start();
 
+            Method = "X11 XFixes";
+            ListenerType = ClipboardListenerType.EventDriven;
             Log.Information("Linux clipboard listener started (X11 XFixes SelectionNotify)");
             return true;
         }
