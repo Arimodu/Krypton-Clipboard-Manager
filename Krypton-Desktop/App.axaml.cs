@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using Krypton.Shared.Protocol;
 using Krypton_Desktop.Services;
 using Krypton_Desktop.ViewModels;
 using Krypton_Desktop.Views;
@@ -28,6 +29,7 @@ public partial class App : Application
     private SettingsWindow? _settingsWindow;
     private StatusWindow? _statusWindow;
     private LoginWindow? _loginWindow;
+    private UpdateWindow? _updateWindow;
 
     public static IServiceProvider Services => ((App)Current!)._serviceProvider!;
 
@@ -79,6 +81,7 @@ public partial class App : Application
             _serverConnection.ClipboardBroadcastReceived += OnClipboardBroadcastReceived;
             _serverConnection.ConnectionLost += OnConnectionLost;
             _serverConnection.ConnectionRestored += OnConnectionRestored;
+            _serverConnection.ServerVersionMismatch += OnServerVersionMismatch;
 
             // Setup tray icon
             _trayIconService = new TrayIconService(
@@ -116,6 +119,9 @@ public partial class App : Application
                 // No API key saved, show login dialog after a short delay
                 _ = Task.Delay(1000).ContinueWith(_ => Dispatcher.UIThread.Post(ShowLogin));
             }
+
+            // Check for desktop updates in the background
+            _ = CheckForUpdatesAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -485,6 +491,62 @@ public partial class App : Application
         });
     }
 
+    private void OnServerVersionMismatch(object? sender, string message)
+    {
+        Dispatcher.UIThread.Post(() =>
+            _trayIconService?.ShowNotification("Server Out of Date", message, null));
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var updateService = new UpdateService();
+            var result = await updateService.GetLatestReleaseAsync();
+            if (result == null)
+                return;
+
+            if (new Version(result.Value.Version) > new Version(PacketConstants.AppVersion))
+            {
+                var version = result.Value.Version;
+                var downloadUrl = result.Value.DownloadUrl;
+                Dispatcher.UIThread.Post(() =>
+                    _trayIconService?.SetUpdateAvailable(version,
+                        () => ShowUpdateWindow(version, downloadUrl)));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to check for updates");
+        }
+    }
+
+    private void ShowUpdateWindow(string version, string downloadUrl)
+    {
+        if (_updateWindow != null && _updateWindow.IsVisible)
+        {
+            _updateWindow.Activate();
+            return;
+        }
+
+        _updateWindow = new UpdateWindow
+        {
+            DataContext = new UpdateViewModel(
+                PacketConstants.AppVersion,
+                version,
+                downloadUrl,
+                () =>
+                {
+                    _updateWindow?.Close();
+                    _updateWindow = null;
+                })
+        };
+
+        _updateWindow.Closed += (_, _) => _updateWindow = null;
+        _updateWindow.Show();
+        _updateWindow.Activate();
+    }
+
     private async Task PullInitialHistoryAsync()
     {
         try
@@ -533,6 +595,7 @@ public partial class App : Application
         _settingsWindow?.Close();
         _statusWindow?.Close();
         _loginWindow?.Close();
+        _updateWindow?.Close();
 
         // Save settings
         var settingsService = _serviceProvider?.GetService<SettingsService>();

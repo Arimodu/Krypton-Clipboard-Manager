@@ -31,6 +31,7 @@ public static class CliBuilder
         rootCommand.AddCommand(UserCommand.Create());
         rootCommand.AddCommand(ApiKeyCommand.Create());
         rootCommand.AddCommand(CleanupCommand.Create());
+        rootCommand.AddCommand(UpgradeCommand.Create());
 
         return rootCommand;
     }

@@ -1,0 +1,102 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Krypton_Desktop.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="280"
+        x:Class="Krypton_Desktop.Views.UpdateWindow"
+        x:DataType="vm:UpdateViewModel"
+        Title="Update Available"
+        Width="400" Height="280"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Background="#1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#0078D4"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="#3D3D3D"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0" Padding="20,16" Background="#252525">
+            <TextBlock Text="Update Available"
+                       Foreground="#FFFFFF"
+                       FontSize="20"
+                       FontWeight="Bold"/>
+        </Border>
+
+        <!-- Content -->
+        <Border Grid.Row="1" Padding="20,16">
+            <StackPanel Spacing="12">
+                <!-- Version info -->
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Foreground="#888888" Text="Current version:" FontSize="13" Margin="0,0,12,6"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1"
+                               Foreground="#FFFFFF" Text="{Binding CurrentVersion}" FontSize="13" Margin="0,0,0,6"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Foreground="#888888" Text="Latest version:" FontSize="13" Margin="0,0,12,0"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1"
+                               Foreground="#4CAF50" Text="{Binding LatestVersion}" FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+
+                <!-- Progress bar -->
+                <ProgressBar Value="{Binding DownloadProgress}"
+                             Minimum="0" Maximum="1"
+                             IsVisible="{Binding IsProgressVisible}"
+                             Height="8"
+                             CornerRadius="4"
+                             Margin="0,4,0,0"/>
+
+                <!-- Status message -->
+                <TextBlock Text="{Binding StatusMessage}"
+                           Foreground="#AAAAAA"
+                           FontSize="12"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Padding="20,12" Background="#252525">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <!-- Download & Install (non-macOS) -->
+                <Button Classes="primary"
+                        Command="{Binding DownloadCommand}"
+                        Content="Download &amp; Install"
+                        IsVisible="{Binding IsNotMacOS}"
+                        IsEnabled="{Binding !IsDownloading}"/>
+
+                <!-- Open Download Page (macOS) -->
+                <Button Classes="primary"
+                        Command="{Binding DownloadCommand}"
+                        Content="Open Download Page"
+                        IsVisible="{Binding IsMacOS}"/>
+
+                <!-- Restart (non-macOS, after download complete) -->
+                <Button Classes="primary"
+                        Command="{Binding RestartCommand}"
+                        Content="Restart Now"
+                        IsVisible="{Binding IsComplete}"/>
+
+                <!-- Cancel -->
+                <Button Classes="secondary"
+                        Command="{Binding CancelCommand}"
+                        Content="Cancel"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

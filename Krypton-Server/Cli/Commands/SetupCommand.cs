@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Diagnostics;
 using Krypton.Server.Configuration;
 using Krypton.Server.Database;
 using Krypton.Server.Database.Entities;
@@ -158,6 +159,18 @@ public static class SetupCommand
             config.Tls.LetsEncrypt.Staging = staging?.Equals("y", StringComparison.OrdinalIgnoreCase) == true;
         }
 
+        // 5. Systemd service
+        if (OperatingSystem.IsLinux() && IsSystemdAvailable())
+        {
+            Console.WriteLine("\n--- Systemd Service ---");
+            Console.Write("Create systemd service? [Y/n]: ");
+            var systemdAnswer = Console.ReadLine();
+            if (!systemdAnswer?.Equals("n", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                await CreateSystemdServiceAsync(configPath);
+            }
+        }
+
         // Save updated config
         SaveConfig(configPath, config);
 
@@ -166,6 +179,64 @@ public static class SetupCommand
         Console.WriteLine("Start the server with: krypton-server start");
 
         return 0;
+    }
+
+    private static bool IsSystemdAvailable()
+    {
+        return Directory.Exists("/run/systemd");
+    }
+
+    private static async Task CreateSystemdServiceAsync(string configPath)
+    {
+        var exePath = Process.GetCurrentProcess().MainModule?.FileName
+            ?? Environment.GetCommandLineArgs()[0];
+        var workingDir = Path.GetDirectoryName(exePath) ?? Directory.GetCurrentDirectory();
+
+        var serviceContent = $"""
+            [Unit]
+            Description=Krypton Clipboard Server
+            After=network.target
+
+            [Service]
+            Type=simple
+            ExecStart={exePath} start --config {configPath}
+            Restart=always
+            RestartSec=10
+            WorkingDirectory={workingDir}
+
+            [Install]
+            WantedBy=multi-user.target
+            """;
+
+        const string systemdPath = "/etc/systemd/system/krypton-server.service";
+        try
+        {
+            await File.WriteAllTextAsync(systemdPath, serviceContent);
+            Console.WriteLine($"Service file written to: {systemdPath}");
+
+            Process.Start("systemctl", "daemon-reload")?.WaitForExit();
+            Process.Start("systemctl", "enable krypton-server.service")?.WaitForExit();
+            Console.WriteLine("Service enabled.");
+
+            Console.Write("Start service now? [Y/n]: ");
+            var startNow = Console.ReadLine();
+            if (!startNow?.Equals("n", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                Process.Start("systemctl", "start krypton-server.service")?.WaitForExit();
+                Console.WriteLine("Service started.");
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            const string localFile = "krypton-server.service";
+            await File.WriteAllTextAsync(localFile, serviceContent);
+            Console.WriteLine($"Service file written to: {localFile}");
+            Console.WriteLine("To install (requires root), run:");
+            Console.WriteLine($"  sudo cp {localFile} {systemdPath}");
+            Console.WriteLine("  sudo systemctl daemon-reload");
+            Console.WriteLine("  sudo systemctl enable krypton-server.service");
+            Console.WriteLine("  sudo systemctl start krypton-server.service");
+        }
     }
 
     private static void CreateConfig(string path)

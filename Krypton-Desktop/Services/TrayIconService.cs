@@ -13,6 +13,7 @@ public class TrayIconService : IDisposable
 {
     private TrayIcon? _trayIcon;
     private NativeMenuItem? _connectItem;
+    private NativeMenuItem? _updateItem;
     private readonly Action _showPopupAction;
     private readonly Action _showSettingsAction;
     private readonly Action _showStatusAction;
@@ -98,6 +99,22 @@ public class TrayIconService : IDisposable
         TrayIcon.SetIcons(Application.Current, [_trayIcon]);
 
         Log.Information("Tray icon initialized");
+    }
+
+    public void SetUpdateAvailable(string version, Action onClick)
+    {
+        if (_trayIcon?.Menu == null)
+            return;
+
+        if (_updateItem != null)
+        {
+            _updateItem.Header = $"⬆ Update Available (v{version})";
+            return;
+        }
+
+        _updateItem = new NativeMenuItem($"⬆ Update Available (v{version})");
+        _updateItem.Click += (_, _) => onClick();
+        _trayIcon.Menu.Items.Insert(0, _updateItem);
     }
 
     public void SetTooltip(string text)

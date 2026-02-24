@@ -3,6 +3,7 @@ using Krypton.Server.Database;
 using Krypton.Server.Database.Repositories;
 using Krypton.Server.Networking;
 using Krypton.Server.Services;
+using Krypton.Shared.Protocol;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -53,8 +54,34 @@ public static class StartCommand
         return command;
     }
 
+    private static void PrintSplashScreen()
+    {
+        const int width = 54;
+        var version = PacketConstants.FullVersion;
+        var contributors = string.Join(", ", BuildContributors.Top5);
+        const string desc = "Cross-platform clipboard sync";
+
+        static string Pad(string label, string value, int totalWidth)
+        {
+            var content = $"  {label,-14} {value}";
+            var padding = totalWidth - content.Length - 1;
+            return $"║{content}{new string(' ', Math.Max(0, padding))}║";
+        }
+
+        Console.WriteLine($"╔{new string('═', width)}╗");
+        Console.WriteLine($"║{"KRYPTON CLIPBOARD SERVER".PadLeft((width + "KRYPTON CLIPBOARD SERVER".Length) / 2).PadRight(width)}║");
+        Console.WriteLine($"╠{new string('═', width)}╣");
+        Console.WriteLine(Pad("Version:", version, width + 2));
+        Console.WriteLine(Pad("Description:", desc, width + 2));
+        Console.WriteLine($"╠{new string('═', width)}╣");
+        Console.WriteLine(Pad("Contributors:", contributors, width + 2));
+        Console.WriteLine($"╚{new string('═', width)}╝");
+        Console.WriteLine();
+    }
+
     private static async Task StartServerAsync(string? configPath, LogEventLevel consoleLevelOverride, CancellationToken cancellationToken)
     {
+        PrintSplashScreen();
         configPath ??= ConfigurationLoader.GetDefaultConfigPath();
 
         if (!File.Exists(configPath))
@@ -146,7 +173,7 @@ public static class StartCommand
                 await context.Database.EnsureCreatedAsync(cancellationToken);
             }
 
-            Console.WriteLine("Starting Krypton Server...");
+            Console.WriteLine($"Starting Krypton Server v{PacketConstants.FullVersion}...");
             Console.WriteLine($"  Port: {config.Server.Port}");
             Console.WriteLine($"  Database: {config.Database.Provider}");
             Console.WriteLine($"  TLS: {config.Tls.Mode}");

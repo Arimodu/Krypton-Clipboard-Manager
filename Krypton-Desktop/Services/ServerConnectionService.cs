@@ -99,6 +99,10 @@ public class ServerConnectionService : IDisposable
     /// Fired when connection is restored after being lost.
     /// </summary>
     public event EventHandler? ConnectionRestored;
+    /// <summary>
+    /// Fired when the server version is older than the client version.
+    /// </summary>
+    public event EventHandler<string>? ServerVersionMismatch;
 
     public ServerConnectionService(SettingsService settingsService)
     {
@@ -223,6 +227,16 @@ public class ServerConnectionService : IDisposable
             if (response?.Type != PacketType.ConnectAck)
             {
                 throw new InvalidOperationException($"Expected ConnectAck, got {response?.Type}");
+            }
+
+            var connectAck = ConnectAck.Parser.ParseFrom(response.Value.Payload);
+            var serverBase = connectAck.ServerVersion.Split('+')[0];
+            var clientBase = PacketConstants.AppVersion;
+            if (System.Version.TryParse(serverBase, out var sv) &&
+                System.Version.TryParse(clientBase, out var cv) && cv > sv)
+            {
+                ServerVersionMismatch?.Invoke(this,
+                    $"Server is v{serverBase}. Client is v{clientBase}. Please upgrade the server.");
             }
 
             State = ConnectionState.Connected;

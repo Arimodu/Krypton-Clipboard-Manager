@@ -160,7 +160,7 @@ public class PacketHandler : IPacketHandler
 
         var response = new ConnectAck
         {
-            ServerVersion = PacketConstants.ServerVersion,
+            ServerVersion = PacketConstants.FullVersion,
             RequiresAuth = true
         };
 
