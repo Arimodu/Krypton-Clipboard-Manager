@@ -88,7 +88,67 @@ public static class SetupCommand
         // 3. Create admin user
         Console.WriteLine("\n--- Admin User Setup ---");
         var userRepo = new UserRepository(context);
+        var currentUsers = await userRepo.GetAllAsync();
 
+        if (currentUsers.Any(u => u.IsAdmin))
+        {
+            Console.Write("Existing admin user in database. Create new admin user? [y/N]: ");
+            var newAdmin = Console.ReadLine();
+            if (!newAdmin?.Equals("y", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                await CreateNewAdminUser(userRepo);
+            }
+        }
+        else
+        {
+            await CreateNewAdminUser(userRepo);
+        }
+
+        // 4. TLS setup
+        Console.WriteLine("\n--- TLS Setup ---");
+        Console.Write("Enable TLS? [Y/n]: ");
+        var enableTls = Console.ReadLine();
+        config.Tls.Mode = enableTls?.Equals("n", StringComparison.OrdinalIgnoreCase) == true
+            ? TlsMode.Off
+            : TlsMode.Enabled;
+
+        if (config.Tls.Mode != TlsMode.Off)
+        {
+            Console.Write("Domain for LetsEncrypt: ");
+            config.Tls.Domain = Console.ReadLine() ?? "";
+
+            Console.Write("Email for LetsEncrypt: ");
+            config.Tls.LetsEncrypt.Email = Console.ReadLine() ?? "";
+
+            Console.Write("Use staging (testing) server? [y/N]: ");
+            var staging = Console.ReadLine();
+            config.Tls.LetsEncrypt.Staging = staging?.Equals("y", StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        // 5. Systemd service
+        if (OperatingSystem.IsLinux() && IsSystemdAvailable())
+        {
+            Console.WriteLine("\n--- Systemd Service ---");
+            Console.Write("Create systemd service? [Y/n]: ");
+            var systemdAnswer = Console.ReadLine();
+            if (!systemdAnswer?.Equals("n", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                await CreateSystemdServiceAsync(configPath);
+            }
+        }
+
+        // Save updated config
+        SaveConfig(configPath, config);
+
+        Console.WriteLine("\n=== Setup Complete ===");
+        Console.WriteLine($"Config saved to: {configPath}");
+        Console.WriteLine("Start the server with: krypton-server start");
+
+        return 0;
+    }
+
+    private static async Task CreateNewAdminUser(UserRepository userRepo)
+    {
         string username;
         while (true)
         {
@@ -137,48 +197,6 @@ public static class SetupCommand
         };
         await userRepo.CreateAsync(adminUser);
         Console.WriteLine($"Admin user '{username}' created.");
-
-        // 4. TLS setup
-        Console.WriteLine("\n--- TLS Setup ---");
-        Console.Write("Enable TLS? [Y/n]: ");
-        var enableTls = Console.ReadLine();
-        config.Tls.Mode = enableTls?.Equals("n", StringComparison.OrdinalIgnoreCase) == true
-            ? TlsMode.Off
-            : TlsMode.Enabled;
-
-        if (config.Tls.Mode != TlsMode.Off)
-        {
-            Console.Write("Domain for LetsEncrypt: ");
-            config.Tls.Domain = Console.ReadLine() ?? "";
-
-            Console.Write("Email for LetsEncrypt: ");
-            config.Tls.LetsEncrypt.Email = Console.ReadLine() ?? "";
-
-            Console.Write("Use staging (testing) server? [y/N]: ");
-            var staging = Console.ReadLine();
-            config.Tls.LetsEncrypt.Staging = staging?.Equals("y", StringComparison.OrdinalIgnoreCase) == true;
-        }
-
-        // 5. Systemd service
-        if (OperatingSystem.IsLinux() && IsSystemdAvailable())
-        {
-            Console.WriteLine("\n--- Systemd Service ---");
-            Console.Write("Create systemd service? [Y/n]: ");
-            var systemdAnswer = Console.ReadLine();
-            if (!systemdAnswer?.Equals("n", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                await CreateSystemdServiceAsync(configPath);
-            }
-        }
-
-        // Save updated config
-        SaveConfig(configPath, config);
-
-        Console.WriteLine("\n=== Setup Complete ===");
-        Console.WriteLine($"Config saved to: {configPath}");
-        Console.WriteLine("Start the server with: krypton-server start");
-
-        return 0;
     }
 
     private static bool IsSystemdAvailable()
