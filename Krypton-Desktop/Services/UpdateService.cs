@@ -101,6 +101,19 @@ public class UpdateService
 
         if (OperatingSystem.IsWindows())
         {
+            var installType = ReadRegistryString("InstallType");
+            if (installType == "setup")
+            {
+                var variant = ReadRegistryString("Variant") ?? "selfcontained";
+                var task = variant == "framework" ? "fd" : "sc";
+                Process.Start(new ProcessStartInfo(tempFilePath,
+                    $"/VERYSILENT /NORESTART /Tasks=\"{task},startup\"")
+                    { UseShellExecute = true });
+                Environment.Exit(0);
+                return;
+            }
+
+            // Portable path: use PowerShell to copy-over running EXE then restart
             var scriptPath = Path.Combine(Path.GetTempPath(), "krypton-update.ps1");
             var script = $"""
                 Start-Sleep -Seconds 2
@@ -130,7 +143,13 @@ public class UpdateService
 
     public static string GetPlatformAssetName()
     {
-        if (OperatingSystem.IsWindows()) return "krypton-desktop-win-x64.exe";
+        if (OperatingSystem.IsWindows())
+        {
+            var installType = ReadRegistryString("InstallType");
+            return installType == "setup"
+                ? "krypton-desktop-win-x64-setup.exe"
+                : "krypton-desktop-win-x64-portable.exe";
+        }
         if (OperatingSystem.IsLinux()) return "krypton-desktop-linux-x64";
         if (OperatingSystem.IsMacOS())
         {
@@ -140,4 +159,13 @@ public class UpdateService
         }
         return string.Empty;
     }
+
+#pragma warning disable CA1416
+    private static string? ReadRegistryString(string valueName)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"Software\Krypton");
+        return key?.GetValue(valueName) as string;
+    }
+#pragma warning restore CA1416
 }
