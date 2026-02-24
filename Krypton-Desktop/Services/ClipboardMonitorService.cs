@@ -14,6 +14,12 @@ public enum ClipboardMonitoringMode
 {
     Stopped,
     Polling,
+    /// <summary>
+    /// Polls a cheap metadata counter (e.g. NSPasteboard.changeCount) rather than
+    /// reading clipboard data. Faster and lighter than full polling, but not truly
+    /// event-driven.
+    /// </summary>
+    EfficientPolling,
     EventDriven
 }
 
@@ -88,8 +94,8 @@ public class ClipboardMonitorService : IDisposable
 
                 if (_macOSListener.Start())
                 {
-                    _currentMode = ClipboardMonitoringMode.EventDriven;
-                    Log.Information("Clipboard monitoring started (macOS changeCount)");
+                    _currentMode = ClipboardMonitoringMode.EfficientPolling;
+                    Log.Information("Clipboard monitoring started (macOS changeCount polling)");
                     return;
                 }
 
