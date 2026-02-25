@@ -139,7 +139,7 @@
                 <TextBlock Classes="header" Text="Startup"/>
                 <CheckBox Content="Start minimized to tray"
                           IsChecked="{Binding StartMinimized}"/>
-                <CheckBox Content="Start with Windows"
+                <CheckBox Content="Start on system boot"
                           IsChecked="{Binding StartWithWindows}"
                           Margin="0,8,0,0"/>
 

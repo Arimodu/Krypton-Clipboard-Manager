@@ -54,7 +54,7 @@ public class ClientConnection : IAsyncDisposable
         // Send ServerHello in plain text
         var serverHello = new ServerHello
         {
-            ServerVersion = PacketConstants.ServerVersion,
+            ServerVersion = PacketConstants.FullVersion,
             TlsAvailable = tlsAvailable,
             TlsRequired = tlsRequired
         };
@@ -133,7 +133,7 @@ public class ClientConnection : IAsyncDisposable
         // Send ServerHello in plain text
         var serverHello = new ServerHello
         {
-            ServerVersion = PacketConstants.ServerVersion,
+            ServerVersion = PacketConstants.FullVersion,
             TlsAvailable = tlsAvailable,
             TlsRequired = tlsRequired
         };

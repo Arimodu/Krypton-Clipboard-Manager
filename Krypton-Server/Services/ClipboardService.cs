@@ -1,3 +1,4 @@
+using Krypton.Server.Configuration;
 using Krypton.Server.Database.Repositories;
 using Krypton.Server.Networking;
 using Krypton.Shared.Protocol;
@@ -12,13 +13,16 @@ public class ClipboardService
 {
     private readonly IClipboardEntryRepository _repository;
     private readonly ConnectionManager _connectionManager;
+    private readonly ServerConfiguration _config;
 
     public ClipboardService(
         IClipboardEntryRepository repository,
-        ConnectionManager connectionManager)
+        ConnectionManager connectionManager,
+        ServerConfiguration config)
     {
         _repository = repository;
         _connectionManager = connectionManager;
+        _config = config;
     }
 
     public async Task<DbClipboardEntry> PushEntryAsync(
@@ -39,6 +43,19 @@ public class ClipboardService
             ContentHash = ComputeHash(content),
             SourceDevice = sourceDevice
         };
+
+        // Store image externally if configured
+        if (contentType == ClipboardContentType.Image
+            && _config.Images.StorageMode == ImageStorageMode.FileSystem
+            && content.Length > 0)
+        {
+            var relativePath = Path.Combine("images", userId.ToString(), $"{Guid.NewGuid()}.png");
+            var fullPath = Path.Combine(_config.Images.StoragePath, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            await File.WriteAllBytesAsync(fullPath, content, cancellationToken);
+            entry.ExternalStoragePath = relativePath;
+            entry.Content = [];
+        }
 
         await _repository.CreateAsync(entry);
 
@@ -105,11 +122,23 @@ public class ClipboardService
 
     public Krypton.Shared.Protocol.ClipboardEntry ToProtoEntry(DbClipboardEntry entry)
     {
+        var content = entry.Content;
+
+        // Hydrate externally stored image content before sending to client
+        if (entry.ExternalStoragePath != null)
+        {
+            var fullPath = Path.Combine(_config.Images.StoragePath, entry.ExternalStoragePath);
+            if (File.Exists(fullPath))
+            {
+                content = File.ReadAllBytes(fullPath);
+            }
+        }
+
         return new Krypton.Shared.Protocol.ClipboardEntry
         {
             Id = entry.Id.ToString(),
             ContentType = entry.ContentType,
-            Content = Google.Protobuf.ByteString.CopyFrom(entry.Content),
+            Content = Google.Protobuf.ByteString.CopyFrom(content),
             ContentPreview = entry.ContentPreview ?? "",
             SourceDevice = entry.SourceDevice ?? "",
             ContentHash = entry.ContentHash,

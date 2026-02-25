@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Diagnostics;
 using Krypton.Server.Configuration;
 using Krypton.Server.Database;
 using Krypton.Server.Database.Entities;
@@ -87,7 +88,67 @@ public static class SetupCommand
         // 3. Create admin user
         Console.WriteLine("\n--- Admin User Setup ---");
         var userRepo = new UserRepository(context);
+        var currentUsers = await userRepo.GetAllAsync();
 
+        if (currentUsers.Any(u => u.IsAdmin))
+        {
+            Console.Write("Existing admin user in database. Create new admin user? [y/N]: ");
+            var newAdmin = Console.ReadLine();
+            if (!newAdmin?.Equals("y", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                await CreateNewAdminUser(userRepo);
+            }
+        }
+        else
+        {
+            await CreateNewAdminUser(userRepo);
+        }
+
+        // 4. TLS setup
+        Console.WriteLine("\n--- TLS Setup ---");
+        Console.Write("Enable TLS? [Y/n]: ");
+        var enableTls = Console.ReadLine();
+        config.Tls.Mode = enableTls?.Equals("n", StringComparison.OrdinalIgnoreCase) == true
+            ? TlsMode.Off
+            : TlsMode.Enabled;
+
+        if (config.Tls.Mode != TlsMode.Off)
+        {
+            Console.Write("Domain for LetsEncrypt: ");
+            config.Tls.Domain = Console.ReadLine() ?? "";
+
+            Console.Write("Email for LetsEncrypt: ");
+            config.Tls.LetsEncrypt.Email = Console.ReadLine() ?? "";
+
+            Console.Write("Use staging (testing) server? [y/N]: ");
+            var staging = Console.ReadLine();
+            config.Tls.LetsEncrypt.Staging = staging?.Equals("y", StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        // 5. Systemd service
+        if (OperatingSystem.IsLinux() && IsSystemdAvailable())
+        {
+            Console.WriteLine("\n--- Systemd Service ---");
+            Console.Write("Create systemd service? [Y/n]: ");
+            var systemdAnswer = Console.ReadLine();
+            if (!systemdAnswer?.Equals("n", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                await CreateSystemdServiceAsync(configPath);
+            }
+        }
+
+        // Save updated config
+        SaveConfig(configPath, config);
+
+        Console.WriteLine("\n=== Setup Complete ===");
+        Console.WriteLine($"Config saved to: {configPath}");
+        Console.WriteLine("Start the server with: krypton-server start");
+
+        return 0;
+    }
+
+    private static async Task CreateNewAdminUser(UserRepository userRepo)
+    {
         string username;
         while (true)
         {
@@ -136,36 +197,64 @@ public static class SetupCommand
         };
         await userRepo.CreateAsync(adminUser);
         Console.WriteLine($"Admin user '{username}' created.");
+    }
 
-        // 4. TLS setup
-        Console.WriteLine("\n--- TLS Setup ---");
-        Console.Write("Enable TLS? [Y/n]: ");
-        var enableTls = Console.ReadLine();
-        config.Tls.Mode = enableTls?.Equals("n", StringComparison.OrdinalIgnoreCase) == true
-            ? TlsMode.Off
-            : TlsMode.Enabled;
+    private static bool IsSystemdAvailable()
+    {
+        return Directory.Exists("/run/systemd");
+    }
 
-        if (config.Tls.Mode != TlsMode.Off)
+    private static async Task CreateSystemdServiceAsync(string configPath)
+    {
+        var exePath = Process.GetCurrentProcess().MainModule?.FileName
+            ?? Environment.GetCommandLineArgs()[0];
+        var workingDir = Path.GetDirectoryName(exePath) ?? Directory.GetCurrentDirectory();
+
+        var serviceContent = $"""
+            [Unit]
+            Description=Krypton Clipboard Server
+            After=network.target
+
+            [Service]
+            Type=simple
+            ExecStart={exePath} start --config {configPath}
+            Restart=always
+            RestartSec=10
+            WorkingDirectory={workingDir}
+
+            [Install]
+            WantedBy=multi-user.target
+            """;
+
+        const string systemdPath = "/etc/systemd/system/krypton-server.service";
+        try
         {
-            Console.Write("Domain for LetsEncrypt: ");
-            config.Tls.Domain = Console.ReadLine() ?? "";
+            await File.WriteAllTextAsync(systemdPath, serviceContent);
+            Console.WriteLine($"Service file written to: {systemdPath}");
 
-            Console.Write("Email for LetsEncrypt: ");
-            config.Tls.LetsEncrypt.Email = Console.ReadLine() ?? "";
+            Process.Start("systemctl", "daemon-reload")?.WaitForExit();
+            Process.Start("systemctl", "enable krypton-server.service")?.WaitForExit();
+            Console.WriteLine("Service enabled.");
 
-            Console.Write("Use staging (testing) server? [y/N]: ");
-            var staging = Console.ReadLine();
-            config.Tls.LetsEncrypt.Staging = staging?.Equals("y", StringComparison.OrdinalIgnoreCase) == true;
+            Console.Write("Start service now? [Y/n]: ");
+            var startNow = Console.ReadLine();
+            if (!startNow?.Equals("n", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                Process.Start("systemctl", "start krypton-server.service")?.WaitForExit();
+                Console.WriteLine("Service started.");
+            }
         }
-
-        // Save updated config
-        SaveConfig(configPath, config);
-
-        Console.WriteLine("\n=== Setup Complete ===");
-        Console.WriteLine($"Config saved to: {configPath}");
-        Console.WriteLine("Start the server with: krypton-server start");
-
-        return 0;
+        catch (UnauthorizedAccessException)
+        {
+            const string localFile = "krypton-server.service";
+            await File.WriteAllTextAsync(localFile, serviceContent);
+            Console.WriteLine($"Service file written to: {localFile}");
+            Console.WriteLine("To install (requires root), run:");
+            Console.WriteLine($"  sudo cp {localFile} {systemdPath}");
+            Console.WriteLine("  sudo systemctl daemon-reload");
+            Console.WriteLine("  sudo systemctl enable krypton-server.service");
+            Console.WriteLine("  sudo systemctl start krypton-server.service");
+        }
     }
 
     private static void CreateConfig(string path)

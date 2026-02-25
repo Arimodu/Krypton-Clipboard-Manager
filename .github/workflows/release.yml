@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      - name: Get version and SHA
+        id: info
+        run: |
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' Krypton-Server/Krypton-Server.csproj | head -1)
+          SHA=${GITHUB_SHA::7}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION-$SHA" >> $GITHUB_OUTPUT
+
+      - name: Generate BuildContributors.cs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CONTRIBUTORS=$(curl -s \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/contributors?per_page=5" | \
+            jq -r '[.[].login | "\"" + . + "\""] | join(", ")')
+          cat > Krypton-Server/BuildContributors.cs << 'CSEOF'
+          // Auto-generated — CI overwrites before each release build
+          namespace Krypton.Server;
+
+          internal static class BuildContributors
+          {
+              public static readonly string[] Top5 = [CONTRIBUTORS_PLACEHOLDER];
+          }
+          CSEOF
+          sed -i "s/CONTRIBUTORS_PLACEHOLDER/$CONTRIBUTORS/" Krypton-Server/BuildContributors.cs
+
+      - name: Publish Desktop portable (win-x64)
+        run: |
+          dotnet publish Krypton-Desktop/Krypton-Desktop.csproj \
+            -c Release -r win-x64 --no-self-contained \
+            -p:PublishSingleFile=true \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/win-x64-portable
+          mv artifacts/win-x64-portable/Krypton-Desktop.exe \
+             artifacts/krypton-desktop-win-x64-portable.exe
+
+      - name: Publish Desktop setup SC (win-x64)
+        run: |
+          dotnet publish Krypton-Desktop/Krypton-Desktop.csproj \
+            -c Release -r win-x64 --self-contained \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/win-x64-sc
+
+      - name: Publish Desktop setup FD (win-x64)
+        run: |
+          dotnet publish Krypton-Desktop/Krypton-Desktop.csproj \
+            -c Release -r win-x64 --no-self-contained \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/win-x64-fd
+
+      - name: Publish Desktop (linux-x64)
+        run: |
+          dotnet publish Krypton-Desktop/Krypton-Desktop.csproj \
+            -c Release -r linux-x64 --no-self-contained \
+            -p:PublishSingleFile=true \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/linux-x64
+          mv artifacts/linux-x64/Krypton-Desktop \
+             artifacts/krypton-desktop-linux-x64
+
+      - name: Publish Desktop (osx-x64)
+        run: |
+          dotnet publish Krypton-Desktop/Krypton-Desktop.csproj \
+            -c Release -r osx-x64 --no-self-contained \
+            -p:PublishSingleFile=true \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/osx-x64
+          cd artifacts/osx-x64
+          zip -r ../krypton-desktop-osx-x64.zip Krypton-Desktop.app
+
+      - name: Publish Desktop (osx-arm64)
+        run: |
+          dotnet publish Krypton-Desktop/Krypton-Desktop.csproj \
+            -c Release -r osx-arm64 --no-self-contained \
+            -p:PublishSingleFile=true \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/osx-arm64
+          cd artifacts/osx-arm64
+          zip -r ../krypton-desktop-osx-arm64.zip Krypton-Desktop.app
+
+      - name: Publish Server (linux-x64)
+        run: |
+          dotnet publish Krypton-Server/Krypton-Server.csproj \
+            -c Release -r linux-x64 --no-self-contained \
+            -p:PublishSingleFile=true \
+            -p:SourceRevisionId=${{ steps.info.outputs.sha }} \
+            -o artifacts/server
+          mv artifacts/server/Krypton-Server \
+             artifacts/krypton-server-linux-x64
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: |
+          iscc "installer/krypton-desktop.iss" \
+            /DAppVersion="${{ steps.info.outputs.tag }}" \
+            /O"artifacts"
+
+      - name: Generate release body
+        id: body
+        run: |
+          TAG=${{ steps.info.outputs.tag }}
+          BASE="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          cat > release-body.md << EOF
+          ## Downloads
+
+          | Platform | Variant | Download |
+          |----------|---------|----------|
+          | Windows | Setup (recommended) | [krypton-desktop-win-x64-setup.exe]($BASE/krypton-desktop-win-x64-setup.exe) |
+          | Windows | Portable EXE | [krypton-desktop-win-x64-portable.exe]($BASE/krypton-desktop-win-x64-portable.exe) |
+          | Linux | x64 | [krypton-desktop-linux-x64]($BASE/krypton-desktop-linux-x64) |
+          | macOS | Intel (x64) | [krypton-desktop-osx-x64.zip]($BASE/krypton-desktop-osx-x64.zip) |
+          | macOS | Apple Silicon (arm64) | [krypton-desktop-osx-arm64.zip]($BASE/krypton-desktop-osx-arm64.zip) |
+          | Server | Linux x64 | [krypton-server-linux-x64]($BASE/krypton-server-linux-x64) |
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: Krypton ${{ steps.info.outputs.version }} (${{ steps.info.outputs.sha }})
+          body_path: release-body.md
+          generate_release_notes: true
+          files: |
+            artifacts/krypton-desktop-win-x64-portable.exe
+            artifacts/krypton-desktop-win-x64-setup.exe
+            artifacts/krypton-desktop-linux-x64
+            artifacts/krypton-desktop-osx-x64.zip
+            artifacts/krypton-desktop-osx-arm64.zip
+            artifacts/krypton-server-linux-x64

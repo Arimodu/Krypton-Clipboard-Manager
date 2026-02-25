@@ -7,7 +7,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using Krypton.Shared.Protocol;
 using Krypton_Desktop.Services;
+using Krypton_Desktop.Services.Platform;
 using Krypton_Desktop.ViewModels;
 using Krypton_Desktop.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +30,8 @@ public partial class App : Application
     private SettingsWindow? _settingsWindow;
     private StatusWindow? _statusWindow;
     private LoginWindow? _loginWindow;
+    private UpdateWindow? _updateWindow;
+    private Views.MacOSPermissionsWindow? _macOSPermissionsWindow;
 
     public static IServiceProvider Services => ((App)Current!)._serviceProvider!;
 
@@ -38,6 +42,11 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Hide Dock icon immediately — before Avalonia shows anything.
+        // LSUIElement in Info.plist covers .app bundle runs; this covers bare-executable runs.
+        if (OperatingSystem.IsMacOS())
+            MacOSPermissions.HideFromDock();
+
         IconProvider.Current.Register<MaterialDesignIconProvider>();
 
         // Configure logging
@@ -72,6 +81,22 @@ public partial class App : Application
             // Setup hotkey manager (callback must marshal to UI thread since SharpHook fires from background thread)
             _hotkeyManager = new HotkeyManager(() => Dispatcher.UIThread.Invoke(ShowPopup));
             _hotkeyManager.SetHotkeyFromString(settingsService.Settings.Hotkey);
+
+            // On macOS, CGEventTap (used by SharpHook) is silently disabled if Input
+            // Monitoring is not granted. Check BEFORE starting the hook so the tap
+            // is created with the permission already active.
+            if (OperatingSystem.IsMacOS() && !MacOSPermissions.AllPermissionsGranted())
+            {
+                Log.Warning("macOS permissions not fully granted — hotkey may be inactive until permissions are approved and Krypton is restarted");
+
+                // Show the permissions window after the tray icon is ready.
+                // Pragma suppresses CA1416: the IsMacOS() guard above guarantees
+                // this branch is only reached on macOS.
+#pragma warning disable CA1416
+                _ = Task.Delay(1000).ContinueWith(_ => Dispatcher.UIThread.Post(ShowMacOSPermissions));
+#pragma warning restore CA1416
+            }
+
             _hotkeyManager.Start();
 
             // Setup server connection events
@@ -79,6 +104,7 @@ public partial class App : Application
             _serverConnection.ClipboardBroadcastReceived += OnClipboardBroadcastReceived;
             _serverConnection.ConnectionLost += OnConnectionLost;
             _serverConnection.ConnectionRestored += OnConnectionRestored;
+            _serverConnection.ServerVersionMismatch += OnServerVersionMismatch;
 
             // Setup tray icon
             _trayIconService = new TrayIconService(
@@ -88,7 +114,8 @@ public partial class App : Application
                 ShowLogin,
                 DisconnectFromServer,
                 () => _serverConnection?.IsAuthenticated ?? false,
-                () => desktop.Shutdown());
+                () => desktop.Shutdown(),
+                OperatingSystem.IsMacOS() ? ShowMacOSPermissions : null);
 
             _trayIconService.Initialize();
 
@@ -116,6 +143,9 @@ public partial class App : Application
                 // No API key saved, show login dialog after a short delay
                 _ = Task.Delay(1000).ContinueWith(_ => Dispatcher.UIThread.Post(ShowLogin));
             }
+
+            // Check for desktop updates in the background
+            _ = CheckForUpdatesAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -165,6 +195,12 @@ public partial class App : Application
 
         // Position the window near the cursor
         PositionWindowNearCursor(_popupWindow);
+
+        // On macOS in accessory/LSUIElement mode the process is a background app.
+        // Without explicitly activating it first, the popup window opens behind
+        // whatever was in the foreground when the hotkey fired.
+        if (OperatingSystem.IsMacOS())
+            MacOSPermissions.ActivateApp();
 
         _popupWindow.Show();
         _popupWindow.Activate();
@@ -362,6 +398,31 @@ public partial class App : Application
         _loginWindow.Activate();
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("macos")]
+    private void ShowMacOSPermissions()
+    {
+        if (_macOSPermissionsWindow != null && _macOSPermissionsWindow.IsVisible)
+        {
+            _macOSPermissionsWindow.Activate();
+            return;
+        }
+
+        _macOSPermissionsWindow = new Views.MacOSPermissionsWindow
+        {
+            DataContext = new ViewModels.MacOSPermissionsViewModel(() =>
+            {
+                _macOSPermissionsWindow?.Close();
+                _macOSPermissionsWindow = null;
+            })
+        };
+
+        _macOSPermissionsWindow.Closed += (_, _) => _macOSPermissionsWindow = null;
+
+        MacOSPermissions.ActivateApp();
+        _macOSPermissionsWindow.Show();
+        _macOSPermissionsWindow.Activate();
+    }
+
     private void DisconnectFromServer()
     {
         _ = _serverConnection?.DisconnectAsync();
@@ -394,6 +455,9 @@ public partial class App : Application
             {
                 var item = Models.ClipboardItem.FromProto(entry);
                 historyService.AddFromServer(item);
+
+                if (item.TextContent != null)
+                    _ = _clipboardMonitor?.SetTextAsync(item.TextContent);
             }
         });
     }
@@ -485,6 +549,62 @@ public partial class App : Application
         });
     }
 
+    private void OnServerVersionMismatch(object? sender, string message)
+    {
+        Dispatcher.UIThread.Post(() =>
+            _trayIconService?.ShowNotification("Server Out of Date", message, null));
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var updateService = new UpdateService();
+            var result = await updateService.GetLatestReleaseAsync();
+            if (result == null)
+                return;
+
+            if (new Version(result.Value.Version) > new Version(PacketConstants.AppVersion))
+            {
+                var version = result.Value.Version;
+                var downloadUrl = result.Value.DownloadUrl;
+                Dispatcher.UIThread.Post(() =>
+                    _trayIconService?.SetUpdateAvailable(version,
+                        () => ShowUpdateWindow(version, downloadUrl)));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to check for updates");
+        }
+    }
+
+    private void ShowUpdateWindow(string version, string downloadUrl)
+    {
+        if (_updateWindow != null && _updateWindow.IsVisible)
+        {
+            _updateWindow.Activate();
+            return;
+        }
+
+        _updateWindow = new UpdateWindow
+        {
+            DataContext = new UpdateViewModel(
+                PacketConstants.AppVersion,
+                version,
+                downloadUrl,
+                () =>
+                {
+                    _updateWindow?.Close();
+                    _updateWindow = null;
+                })
+        };
+
+        _updateWindow.Closed += (_, _) => _updateWindow = null;
+        _updateWindow.Show();
+        _updateWindow.Activate();
+    }
+
     private async Task PullInitialHistoryAsync()
     {
         try
@@ -525,6 +645,12 @@ public partial class App : Application
     {
         Log.Information("Krypton Desktop shutting down...");
 
+        // macOS can hang during shutdown if the AppKit run-loop or a background
+        // thread doesn't exit cleanly.  Schedule a hard exit after 4 seconds so
+        // the process never gets stuck waiting indefinitely.
+        if (OperatingSystem.IsMacOS())
+            _ = Task.Delay(4000).ContinueWith(_ => Environment.Exit(0));
+
         _hotkeyManager?.Dispose();
         _clipboardMonitor?.Dispose();
         _serverConnection?.Dispose();
@@ -533,6 +659,8 @@ public partial class App : Application
         _settingsWindow?.Close();
         _statusWindow?.Close();
         _loginWindow?.Close();
+        _updateWindow?.Close();
+        _macOSPermissionsWindow?.Close();
 
         // Save settings
         var settingsService = _serviceProvider?.GetService<SettingsService>();

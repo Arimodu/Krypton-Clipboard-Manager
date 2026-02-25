@@ -43,6 +43,23 @@ namespace Krypton_Desktop.Models
         }
 
         /// <summary>
+        /// Creates a ClipboardItem from PNG image bytes.
+        /// </summary>
+        public static ClipboardItem FromImage(byte[] pngBytes, string? sourceDevice = null)
+        {
+            Services.ClipboardImageHelper.TryGetPngDimensions(pngBytes, out var w, out var h);
+            var sizeKb = pngBytes.Length / 1024;
+            return new ClipboardItem
+            {
+                ContentType = ClipboardContentType.Image,
+                Content = pngBytes,
+                Preview = $"[Image: {w}×{h} px, {sizeKb} KB]",
+                ContentHash = ComputeHash(pngBytes),
+                SourceDevice = sourceDevice
+            };
+        }
+
+        /// <summary>
         /// Creates a ClipboardItem from a proto entry.
         /// </summary>
         public static ClipboardItem FromProto(ClipboardEntry entry)

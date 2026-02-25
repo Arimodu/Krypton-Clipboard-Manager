@@ -31,6 +31,13 @@ public class ClipboardEntry
 
     public DateTime SyncedAt { get; set; }
 
+    /// <summary>
+    /// Relative path to externally stored image file (e.g. "images/{userId}/{uuid}.png").
+    /// Null when image content is stored in the Content blob.
+    /// </summary>
+    [MaxLength(512)]
+    public string? ExternalStoragePath { get; set; }
+
     [ForeignKey(nameof(UserId))]
     public User User { get; set; } = null!;
 }

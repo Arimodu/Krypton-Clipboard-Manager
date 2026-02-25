@@ -244,6 +244,16 @@ public class ClipboardPopupViewModel : ViewModelBase
 
     private async Task PasteItemAsync(ClipboardItemViewModel itemVm)
     {
+        if (itemVm.Item.ContentType == Krypton.Shared.Protocol.ClipboardContentType.Image)
+        {
+            await _clipboardMonitor.SetImageAsync(itemVm.Item.Content);
+            _historyService.MoveToTop(itemVm.Item.Id);
+            _closeAction();
+            await Task.Delay(100);
+            SimulateCtrlV();
+            return;
+        }
+
         if (itemVm.Item.TextContent != null)
         {
             await _clipboardMonitor.SetTextAsync(itemVm.Item.TextContent);
@@ -289,6 +299,7 @@ public class ClipboardPopupViewModel : ViewModelBase
     {
         _historyService.Remove(itemVm.Item.Id);
         Items.Remove(itemVm);
+        itemVm.Dispose();
     }
 
     private void Close()
@@ -300,16 +311,22 @@ public class ClipboardPopupViewModel : ViewModelBase
     {
         _historyService.ItemAdded -= OnItemAdded;
         _historyService.HistoryCleared -= OnHistoryCleared;
+        foreach (var item in Items)
+            item.Dispose();
     }
 }
 
-public class ClipboardItemViewModel : ViewModelBase
+public class ClipboardItemViewModel : ViewModelBase, IDisposable
 {
     public ClipboardItem Item { get; }
 
     public string Preview => Item.Preview;
     public string TimeAgo => GetTimeAgo(Item.CreatedAt);
     public bool IsSynced => Item.IsSynced;
+
+    public bool IsImage => Item.ContentType == Krypton.Shared.Protocol.ClipboardContentType.Image;
+    public bool IsText => !IsImage;
+
     public string ContentTypeIcon => Item.ContentType switch
     {
         Krypton.Shared.Protocol.ClipboardContentType.Text => "ContentCopy",
@@ -329,9 +346,36 @@ public class ClipboardItemViewModel : ViewModelBase
         _ => 4
     };
 
+    private Avalonia.Media.Imaging.Bitmap? _imageThumbnail;
+
+    /// <summary>
+    /// Lazily decoded image thumbnail. Only populated for image items.
+    /// </summary>
+    public Avalonia.Media.Imaging.Bitmap? ImageThumbnail
+    {
+        get
+        {
+            if (_imageThumbnail != null || !IsImage || Item.Content.Length == 0)
+                return _imageThumbnail;
+            try
+            {
+                using var ms = new System.IO.MemoryStream(Item.Content);
+                _imageThumbnail = new Avalonia.Media.Imaging.Bitmap(ms);
+            }
+            catch { /* corrupt image — leave null */ }
+            return _imageThumbnail;
+        }
+    }
+
     public ClipboardItemViewModel(ClipboardItem item)
     {
         Item = item;
+    }
+
+    public void Dispose()
+    {
+        _imageThumbnail?.Dispose();
+        _imageThumbnail = null;
     }
 
     private static string GetTimeAgo(DateTime dateTime)

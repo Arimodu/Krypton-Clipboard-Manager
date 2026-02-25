@@ -7,6 +7,7 @@ public class ServerConfiguration
     public CleanupSection Cleanup { get; set; } = new();
     public TlsSection Tls { get; set; } = new();
     public LoggingSection Logging { get; set; } = new();
+    public ImageStorageConfig Images { get; set; } = new();
 }
 
 public class ServerSection
@@ -59,4 +60,15 @@ public class LoggingSection
 {
     public string Level { get; set; } = "Information";
     public string FilePath { get; set; } = "/var/log/krypton/server.log";
+}
+
+public enum ImageStorageMode { Database, FileSystem }
+
+public class ImageStorageConfig
+{
+    public ImageStorageMode StorageMode { get; set; } = ImageStorageMode.Database;
+    /// <summary>Directory for image files when StorageMode = FileSystem (relative to server working dir).</summary>
+    public string StoragePath { get; set; } = "images";
+    /// <summary>Days to retain image entries. 0 = never auto-delete.</summary>
+    public int RetentionDays { get; set; } = 30;
 }
