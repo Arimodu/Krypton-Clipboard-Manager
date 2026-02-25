@@ -83,6 +83,7 @@ public static class SetupCommand
         var dbOptions = DatabaseFactory.CreateOptions(config.Database);
         await using var context = new KryptonDbContext(dbOptions);
         await DatabaseFactory.EnsureDatabaseCreatedAsync(context);
+        await DatabaseMigrator.ApplySchemaUpgradesAsync(context);
         Console.WriteLine("Database initialized.");
 
         // 3. Create admin user

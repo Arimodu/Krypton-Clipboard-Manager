@@ -166,11 +166,12 @@ public static class StartCommand
                 })
                 .Build();
 
-            // Ensure database is created
+            // Ensure database is created, then apply any schema upgrades for existing DBs
             using (var scope = host.Services.CreateScope())
             {
                 var context = scope.ServiceProvider.GetRequiredService<KryptonDbContext>();
                 await context.Database.EnsureCreatedAsync(cancellationToken);
+                await DatabaseMigrator.ApplySchemaUpgradesAsync(context);
             }
 
             Console.WriteLine($"Starting Krypton Server v{PacketConstants.FullVersion}...");
